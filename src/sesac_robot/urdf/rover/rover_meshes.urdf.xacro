@@ -1,0 +1,306 @@
+<?xml version="1.0"?>
+<!--
+  Mobiler Roboter mit 6 Raedern - Mesh-Version (DAE mit Texturen, STL-Kollision).
+
+  Meshes:   meshes/rover/visual/*.dae   (Texturen: meshes/rover/visual/textures/*.png)
+            meshes/rover/collision/*.stl
+  Frames:   base_footprint (Boden)  ->  base_link (Achshoehe, x vorne, y links, z oben)
+  Antrieb:  6 durchgehende Raeder, links/rechts je 3 gekoppelt (Skid-Steer via gz DiffDrive)
+  Sensoren: lidar2d_link          2D-Lidar vorne, 180 Grad  (Topic: scan)
+            lidar3d_link          3D-Lidar auf dem Absatz in der Plattformmitte  (Topic: lidar3d/points)
+            camera_front_link     Tiefenkamera vorne  (Topic: camera_front/...)
+            camera_rear_link      Tiefenkamera hinten (Topic: camera_rear/...)
+            *_optical_frame       Kamera-Frames nach ROS-Konvention (z vorne, x rechts, y unten)
+  Lichter:  Scheinwerfer (weiss, vorne) und Rueckleuchten (rot, hinten) als leuchtende Mesh-Flaechen.
+
+  Argument: use_gazebo:=true  aktiviert DiffDrive, JointStatePublisher und die Sensoren fuer Gazebo (gz-sim).
+             Die Welt braucht dafuer das Sensors-System (gz-sim-sensors-system, render_engine ogre2).
+-->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="rover6_meshes">
+
+	<xacro:arg name="use_gazebo" default="false"/>
+
+	<xacro:property name="mesh_dir" value="package://sesac_robot/meshes/rover"/>
+
+	<xacro:property name="wheel_radius" value="0.09"/>
+	<xacro:property name="wheel_y" value="0.2625"/>
+	<xacro:property name="wheel_x" value="0.25"/>
+	<xacro:property name="cam_x" value="0.355"/>
+	<xacro:property name="cam_z" value="0.045"/>
+
+	<!-- ===================== Rumpf ===================== -->
+	<link name="base_footprint"/>
+
+	<link name="base_link">
+		<visual>
+			<geometry>
+				<mesh filename="${mesh_dir}/visual/base_link.dae"/>
+			</geometry>
+		</visual>
+		<collision>
+			<geometry>
+				<mesh filename="${mesh_dir}/collision/base_link.stl"/>
+			</geometry>
+		</collision>
+		<inertial>
+			<origin xyz="0.00000 0.00000 0.04754" rpy="0 0 0"/>
+			<mass value="14.000"/>
+			<inertia ixx="2.183483e-01" ixy="-3.310671e-06" ixz="-8.285991e-07" iyy="5.464615e-01" iyz="-4.888700e-07" izz="7.150927e-01"/>
+		</inertial>
+	</link>
+
+	<joint name="base_footprint_joint" type="fixed">
+		<parent link="base_footprint"/>
+		<child link="base_link"/>
+		<origin xyz="0 0 ${wheel_radius}" rpy="0 0 0"/>
+	</joint>
+
+	<!-- ===================== Raeder ===================== -->
+	<xacro:macro name="wheel" params="name x side">
+		<link name="${name}_link">
+			<visual>
+				<geometry>
+					<mesh filename="${mesh_dir}/visual/wheel.dae"/>
+				</geometry>
+			</visual>
+			<collision>
+				<geometry>
+					<mesh filename="${mesh_dir}/collision/wheel.stl"/>
+				</geometry>
+			</collision>
+			<inertial>
+				<origin xyz="-0.00000 -0.00000 -0.00000" rpy="0 0 0"/>
+				<mass value="1.200"/>
+				<inertia ixx="2.972192e-03" ixy="2.979098e-20" ixz="-7.234538e-21" iyy="4.819383e-03" iyz="1.565396e-19" izz="2.972192e-03"/>
+			</inertial>
+		</link>
+		<joint name="${name}_joint" type="continuous">
+			<parent link="base_link"/>
+			<child link="${name}_link"/>
+			<origin xyz="${x} ${side*wheel_y} 0" rpy="0 0 0"/>
+			<axis xyz="0 1 0"/>
+			<dynamics damping="0.05" friction="0.02"/>
+		</joint>
+		<gazebo reference="${name}_link">
+			<mu1>1.0</mu1>
+			<mu2>0.4</mu2>
+		</gazebo>
+	</xacro:macro>
+
+	<xacro:wheel name="wheel_fl" x="${wheel_x}" side="1"/>
+	<xacro:wheel name="wheel_ml" x="0" side="1"/>
+	<xacro:wheel name="wheel_rl" x="${-wheel_x}" side="1"/>
+	<xacro:wheel name="wheel_fr" x="${wheel_x}" side="-1"/>
+	<xacro:wheel name="wheel_mr" x="0" side="-1"/>
+	<xacro:wheel name="wheel_rr" x="${-wheel_x}" side="-1"/>
+
+	<!-- ===================== Lidar ===================== -->
+	<!-- 2D-Lidar vorne auf dem Deck; Ursprung = Scanebene, 180 Grad nach vorne -->
+	<link name="lidar2d_link">
+		<visual>
+			<geometry>
+				<mesh filename="${mesh_dir}/visual/lidar2d.dae"/>
+			</geometry>
+		</visual>
+		<collision>
+			<geometry>
+				<mesh filename="${mesh_dir}/collision/lidar2d.stl"/>
+			</geometry>
+		</collision>
+		<inertial>
+			<origin xyz="-0.00000 -0.00000 -0.01699" rpy="0 0 0"/>
+			<mass value="0.200"/>
+			<inertia ixx="1.282036e-04" ixy="-8.249747e-10" ixz="-4.318724e-10" iyy="1.282036e-04" iyz="-4.318724e-10" izz="1.044836e-04"/>
+		</inertial>
+	</link>
+	<joint name="lidar2d_joint" type="fixed">
+		<parent link="base_link"/>
+		<child link="lidar2d_link"/>
+		<origin xyz="0.265 0 0.16" rpy="0 0 0"/>
+	</joint>
+	<xacro:if value="$(arg use_gazebo)">
+		<gazebo reference="lidar2d_link">
+			<sensor name="lidar2d" type="gpu_lidar">
+				<always_on>true</always_on>
+				<update_rate>20</update_rate>
+				<visualize>false</visualize>
+				<topic>scan</topic>
+				<gz_frame_id>lidar2d_link</gz_frame_id>
+				<lidar>
+					<scan>
+						<horizontal>
+							<samples>360</samples>
+							<resolution>1</resolution>
+							<min_angle>-1.570796</min_angle>
+							<max_angle>1.570796</max_angle>
+						</horizontal>
+					</scan>
+					<range>
+						<min>0.05</min>
+						<max>12.0</max>
+						<resolution>0.01</resolution>
+					</range>
+					<noise>
+						<type>gaussian</type>
+						<mean>0.0</mean>
+						<stddev>0.01</stddev>
+					</noise>
+				</lidar>
+			</sensor>
+		</gazebo>
+	</xacro:if>
+
+	<!-- 3D-Lidar auf dem Absatz in der Plattformmitte; Ursprung = Fenstermitte -->
+	<link name="lidar3d_link">
+		<visual>
+			<geometry>
+				<mesh filename="${mesh_dir}/visual/lidar3d.dae"/>
+			</geometry>
+		</visual>
+		<collision>
+			<geometry>
+				<mesh filename="${mesh_dir}/collision/lidar3d.stl"/>
+			</geometry>
+		</collision>
+		<inertial>
+			<origin xyz="-0.00000 -0.00000 -0.00000" rpy="0 0 0"/>
+			<mass value="0.600"/>
+			<inertia ixx="6.836611e-04" ixy="-1.084413e-20" ixz="3.837854e-37" iyy="6.836611e-04" iyz="2.385751e-21" izz="8.489221e-04"/>
+		</inertial>
+	</link>
+	<joint name="lidar3d_joint" type="fixed">
+		<parent link="base_link"/>
+		<child link="lidar3d_link"/>
+		<origin xyz="0 0 0.189" rpy="0 0 0"/>
+	</joint>
+	<xacro:if value="$(arg use_gazebo)">
+		<gazebo reference="lidar3d_link">
+			<sensor name="lidar3d" type="gpu_lidar">
+				<always_on>true</always_on>
+				<update_rate>10</update_rate>
+				<visualize>false</visualize>
+				<topic>lidar3d</topic>
+				<gz_frame_id>lidar3d_link</gz_frame_id>
+				<lidar>
+					<scan>
+						<horizontal>
+							<samples>1024</samples>
+							<resolution>1</resolution>
+							<min_angle>-3.141593</min_angle>
+							<max_angle>3.141593</max_angle>
+						</horizontal>
+						<vertical>
+							<samples>16</samples>
+							<resolution>1</resolution>
+							<min_angle>-0.261799</min_angle>
+							<max_angle>0.261799</max_angle>
+						</vertical>
+					</scan>
+					<range>
+						<min>0.3</min>
+						<max>100.0</max>
+						<resolution>0.01</resolution>
+					</range>
+					<noise>
+						<type>gaussian</type>
+						<mean>0.0</mean>
+						<stddev>0.01</stddev>
+					</noise>
+				</lidar>
+			</sensor>
+		</gazebo>
+	</xacro:if>
+
+	<!-- ===================== Tiefenkameras ===================== -->
+	<xacro:macro name="depth_camera" params="name x yaw">
+		<link name="${name}_link">
+			<visual>
+				<geometry>
+					<mesh filename="${mesh_dir}/visual/depth_camera.dae"/>
+				</geometry>
+			</visual>
+			<collision>
+				<geometry>
+					<mesh filename="${mesh_dir}/collision/depth_camera.stl"/>
+				</geometry>
+			</collision>
+			<inertial>
+				<origin xyz="-0.01250 0.00000 0.00000" rpy="0 0 0"/>
+				<mass value="0.100"/>
+				<inertia ixx="7.144076e-05" ixy="-4.105198e-10" ixz="-9.995387e-11" iyy="1.005814e-05" iyz="-4.105198e-10" izz="7.144076e-05"/>
+			</inertial>
+		</link>
+		<joint name="${name}_joint" type="fixed">
+			<parent link="base_link"/>
+			<child link="${name}_link"/>
+			<origin xyz="${x} 0 ${cam_z}" rpy="0 0 ${yaw}"/>
+		</joint>
+		<link name="${name}_optical_frame"/>
+		<joint name="${name}_optical_joint" type="fixed">
+			<parent link="${name}_link"/>
+			<child link="${name}_optical_frame"/>
+			<origin xyz="0 0 0" rpy="-1.5707963 0 -1.5707963"/>
+		</joint>
+		<xacro:if value="$(arg use_gazebo)">
+			<gazebo reference="${name}_link">
+				<sensor name="${name}" type="rgbd_camera">
+					<always_on>true</always_on>
+					<update_rate>30</update_rate>
+					<visualize>false</visualize>
+					<topic>${name}</topic>
+					<gz_frame_id>${name}_optical_frame</gz_frame_id>
+					<camera>
+						<horizontal_fov>1.5184</horizontal_fov>
+						<image>
+							<width>640</width>
+							<height>480</height>
+							<format>R8G8B8</format>
+						</image>
+						<clip>
+							<near>0.1</near>
+							<far>10.0</far>
+						</clip>
+						<depth_camera>
+							<clip>
+								<near>0.2</near>
+								<far>10.0</far>
+							</clip>
+						</depth_camera>
+						<noise>
+							<type>gaussian</type>
+							<mean>0.0</mean>
+							<stddev>0.007</stddev>
+						</noise>
+					</camera>
+				</sensor>
+			</gazebo>
+		</xacro:if>
+	</xacro:macro>
+
+	<xacro:depth_camera name="camera_front" x="${cam_x}" yaw="0"/>
+	<xacro:depth_camera name="camera_rear" x="${-cam_x}" yaw="3.14159265"/>
+
+	<!-- ===================== Gazebo: Antrieb ===================== -->
+	<xacro:if value="$(arg use_gazebo)">
+		<gazebo>
+			<plugin filename="gz-sim-joint-state-publisher-system" name="gz::sim::systems::JointStatePublisher"/>
+			<plugin filename="gz-sim-diff-drive-system" name="gz::sim::systems::DiffDrive">
+				<left_joint>wheel_fl_joint</left_joint>
+				<left_joint>wheel_ml_joint</left_joint>
+				<left_joint>wheel_rl_joint</left_joint>
+				<right_joint>wheel_fr_joint</right_joint>
+				<right_joint>wheel_mr_joint</right_joint>
+				<right_joint>wheel_rr_joint</right_joint>
+				<wheel_separation>${2*wheel_y}</wheel_separation>
+				<wheel_radius>${wheel_radius}</wheel_radius>
+				<max_linear_acceleration>1.0</max_linear_acceleration>
+				<topic>cmd_vel</topic>
+				<odom_topic>odom</odom_topic>
+				<tf_topic>tf</tf_topic>
+				<frame_id>odom</frame_id>
+				<child_frame_id>base_footprint</child_frame_id>
+			</plugin>
+		</gazebo>
+	</xacro:if>
+
+</robot>

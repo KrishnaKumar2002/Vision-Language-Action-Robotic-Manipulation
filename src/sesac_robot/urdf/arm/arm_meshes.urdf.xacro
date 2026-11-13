@@ -1,0 +1,362 @@
+<?xml version="1.0"?>
+<!--
+  6-Achs-Roboterarm with parallel gripper - Mesh-Version (DAE with textures, STL-Kollision).
+
+  Meshes:   meshes/arm/visual/*.dae   (Textures: meshes/arm/visual/textures/*.png)
+            meshes/arm/collision/*.stl
+  Origin:   Middle of the base plate, z upwards. All link frames lie in the joints.
+  Joints:  shoulder_rotation_joint (z, Base)  shoulder_lift_joint (y, Shoulder)  elbow_joint (y, Elbow)
+            middle_arm_joint (z, Forearm-Roll)  elbow_2_joint (y, Wrist-Flexion)  wrist_joint (z, Flange-Roll)
+            gripper_left_joint (prismatic, right finger follows per mimic)
+
+  Arguments: use_gazebo:=true      gz_ros2_control instead of Mock-Hardware controllers_file:=... path to Controller-YAML (Gazebo only)
+-->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="arm6_meshes">
+
+	<xacro:arg name="use_gazebo" default="false"/>
+	<xacro:arg name="controllers_file" default=""/>
+
+	<xacro:property name="mesh_dir" value="package://sesac_robot/meshes/arm"/>
+
+	<!-- joint positions (m) - matching the Meshes -->
+	<xacro:property name="z_j1" value="0.10"/>
+	<xacro:property name="z_j2" value="0.16"/>
+	<xacro:property name="z_j3" value="0.38"/>
+	<xacro:property name="z_j4" value="0.20"/>
+	<xacro:property name="z_j5" value="0.16"/>
+	<xacro:property name="z_j6" value="0.09"/>
+	<xacro:property name="z_tool" value="0.045"/>
+	<xacro:property name="z_finger" value="0.060"/>
+
+	<!-- ros2_control: Position interface for one joint -->
+	<xacro:macro name="position_joint_iface" params="name min max">
+		<joint name="${name}">
+			<command_interface name="position">
+				<param name="min">${min}</param>
+				<param name="max">${max}</param>
+			</command_interface>
+			<state_interface name="position">
+				<param name="initial_value">0.0</param>
+			</state_interface>
+			<state_interface name="velocity"/>
+		</joint>
+	</xacro:macro>
+
+	<!-- ===================== Base Links ===================== -->
+	<link name="mounting_plate"/>
+	<link name="base_link">
+		<visual>
+			<geometry>
+				<mesh filename="${mesh_dir}/visual/base_link.dae"/>
+			</geometry>
+		</visual>
+		<collision>
+			<geometry>
+				<mesh filename="${mesh_dir}/collision/base_link.stl"/>
+			</geometry>
+		</collision>
+		<inertial>
+			<origin xyz="-0.00313 -0.00000 0.04586" rpy="0 0 0"/>
+			<mass value="4.000"/>
+			<inertia ixx="1.146007e-02" ixy="-7.237902e-10" ixz="7.702188e-05" iyy="1.247840e-02" iyz="-1.105242e-09" izz="1.674454e-02"/>
+		</inertial>
+	</link>
+	<link name="base_link_text">
+		<visual>
+			<geometry>
+				<mesh filename="${mesh_dir}/visual/text.dae" scale="0.8 1 1"/>
+			</geometry>
+			<origin xyz="0.055 -0.018 0.05" rpy="${0} 0 ${pi/2.2}"/>
+		</visual>
+		<collision>
+			<geometry>
+				<box size="0.15 0.04 0.045"/>
+			</geometry>
+			<origin xyz="0.07 0.0 0.07" rpy="${0} 0 ${pi/2}"/>
+		</collision>
+		<inertial>
+			<origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
+			<mass value="0.001"/>
+			<inertia ixx="0.0" ixy="0.0" ixz="0.0" iyy="0.0" iyz="0.0" izz="0.0"/>
+		</inertial>
+	</link>
+	<link name="shoulder_link">
+		<visual>
+			<geometry>
+				<mesh filename="${mesh_dir}/visual/shoulder_link.dae"/>
+			</geometry>
+		</visual>
+		<collision>
+			<geometry>
+				<mesh filename="${mesh_dir}/collision/shoulder_link.stl"/>
+			</geometry>
+		</collision>
+		<inertial>
+			<origin xyz="-0.00000 -0.00000 0.08696" rpy="0 0 0"/>
+			<mass value="3.200"/>
+			<inertia ixx="1.960185e-02" ixy="-1.333733e-09" ixz="-1.506748e-08" iyy="1.483043e-02" iyz="-1.631106e-09" izz="1.368136e-02"/>
+		</inertial>
+	</link>
+	<!-- ===================== Arm Links ===================== -->
+	<link name="upper_arm_link">
+		<visual>
+			<geometry>
+				<mesh filename="${mesh_dir}/visual/upper_arm_link.dae"/>
+			</geometry>
+		</visual>
+		<collision>
+			<geometry>
+				<mesh filename="${mesh_dir}/collision/upper_arm_link.stl"/>
+			</geometry>
+		</collision>
+		<inertial>
+			<origin xyz="0.00000 0.00000 0.16200" rpy="0 0 0"/>
+			<mass value="4.200"/>
+			<inertia ixx="8.878787e-02" ixy="-2.560759e-19" ixz="8.556032e-19" iyy="8.829619e-02" iyz="8.800705e-19" izz="7.056254e-03"/>
+		</inertial>
+	</link>
+	<link name="middle_arm_1_link">
+		<visual>
+			<geometry>
+				<mesh filename="${mesh_dir}/visual/middle_arm_1_link.dae"/>
+			</geometry>
+		</visual>
+		<collision>
+			<geometry>
+				<mesh filename="${mesh_dir}/collision/middle_arm_1_link.stl"/>
+			</geometry>
+		</collision>
+		<inertial>
+			<origin xyz="-0.00000 0.00000 0.07870" rpy="0 0 0"/>
+			<mass value="2.600"/>
+			<inertia ixx="1.044937e-02" ixy="-4.994493e-09" ixz="-3.731723e-09" iyy="9.128401e-03" iyz="-5.332847e-09" izz="4.623903e-03"/>
+		</inertial>
+	</link>
+	<link name="middle_arm_2_link">
+		<visual>
+			<geometry>
+				<mesh filename="${mesh_dir}/visual/middle_arm_2_link.dae"/>
+			</geometry>
+		</visual>
+		<collision>
+			<geometry>
+				<mesh filename="${mesh_dir}/collision/middle_arm_2_link.stl"/>
+			</geometry>
+		</collision>
+		<inertial>
+			<origin xyz="-0.00000 -0.00000 0.10534" rpy="0 0 0"/>
+			<mass value="1.600"/>
+			<inertia ixx="5.484370e-03" ixy="-2.576413e-09" ixz="-1.050704e-09" iyy="5.065759e-03" iyz="-1.408075e-09" izz="1.673334e-03"/>
+		</inertial>
+	</link>
+	<link name="wrist_link">
+		<visual>
+			<geometry>
+				<mesh filename="${mesh_dir}/visual/wrist_link.dae"/>
+			</geometry>
+		</visual>
+		<collision>
+			<geometry>
+				<mesh filename="${mesh_dir}/collision/wrist_link.stl"/>
+			</geometry>
+		</collision>
+		<inertial>
+			<origin xyz="-0.00000 -0.00000 0.02326" rpy="0 0 0"/>
+			<mass value="1.100"/>
+			<inertia ixx="1.521824e-03" ixy="1.094483e-21" ixz="-2.084772e-20" iyy="1.442962e-03" iyz="-1.312353e-20" izz="7.442093e-04"/>
+		</inertial>
+	</link>
+	<link name="wrist_2_link">
+		<visual>
+			<geometry>
+				<mesh filename="${mesh_dir}/visual/wrist_2_link.dae"/>
+			</geometry>
+		</visual>
+		<collision>
+			<geometry>
+				<mesh filename="${mesh_dir}/collision/wrist_2_link.stl"/>
+			</geometry>
+		</collision>
+		<inertial>
+			<origin xyz="-0.00000 -0.00000 0.02250" rpy="0 0 0"/>
+			<mass value="0.500"/>
+			<inertia ixx="2.490148e-04" ixy="-1.510977e-21" ixz="-7.996448e-22" iyy="2.490148e-04" iyz="5.409568e-21" izz="3.292796e-04"/>
+		</inertial>
+	</link>
+
+	<!-- ===================== End Effector Links ===================== -->
+	<!-- Tool link is a dummy link to connect the end effector. Normally you endeffektor and arm are two separate thins in sell and you only connect them with a fixed joint -->
+	<link name="tool0"/>
+	<!-- ===================== Gripper Links ===================== -->
+	<link name="gripper_base">
+		<visual>
+			<geometry>
+				<mesh filename="${mesh_dir}/visual/gripper_base.dae"/>
+			</geometry>
+		</visual>
+		<collision>
+			<geometry>
+				<mesh filename="${mesh_dir}/collision/gripper_base.stl"/>
+			</geometry>
+		</collision>
+		<inertial>
+			<origin xyz="-0.00000 0.00000 0.03388" rpy="0 0 0"/>
+			<mass value="0.650"/>
+			<inertia ixx="9.385615e-04" ixy="-3.301602e-09" ixz="-1.038823e-09" iyy="3.149531e-04" iyz="-2.621797e-09" izz="9.335724e-04"/>
+		</inertial>
+	</link>
+	<link name="gripper_left_finger">
+		<visual>
+			<geometry>
+				<mesh filename="${mesh_dir}/visual/gripper_finger.dae"/>
+			</geometry>
+		</visual>
+		<collision>
+			<geometry>
+				<mesh filename="${mesh_dir}/collision/gripper_finger.stl"/>
+			</geometry>
+		</collision>
+		<inertial>
+			<origin xyz="-0.00000 0.01251 0.02870" rpy="0 0 0"/>
+			<mass value="0.080"/>
+			<inertia ixx="5.172802e-05" ixy="-9.090445e-11" ixz="-1.286706e-10" iyy="5.259568e-05" iyz="8.561200e-06" izz="1.336618e-05"/>
+		</inertial>
+	</link>
+	<link name="gripper_right_finger">
+		<visual>
+			<geometry>
+				<mesh filename="${mesh_dir}/visual/gripper_finger.dae"/>
+			</geometry>
+		</visual>
+		<collision>
+			<geometry>
+				<mesh filename="${mesh_dir}/collision/gripper_finger.stl"/>
+			</geometry>
+		</collision>
+		<inertial>
+			<origin xyz="-0.00000 0.01251 0.02870" rpy="0 0 0"/>
+			<mass value="0.080"/>
+			<inertia ixx="5.172802e-05" ixy="-9.090445e-11" ixz="-1.286706e-10" iyy="5.259568e-05" iyz="8.561200e-06" izz="1.336618e-05"/>
+		</inertial>
+	</link>
+
+	<!-- ===================== Joints ===================== -->
+
+	<joint name="joint_name" type="fixed">
+		<parent link="mounting_plate"/>
+		<child link="base_link"/>
+		<origin xyz="0 0 0" rpy="0 0 0"/>
+	</joint>
+
+	<joint name="base_text" type="fixed">
+		<parent link="base_link"/>
+		<child link="base_link_text"/>
+		<origin xyz="0 0 0" rpy="0 0 0"/>
+	</joint>
+
+	<joint name="shoulder_rotation_joint" type="revolute">
+		<parent link="base_link"/>
+		<child link="shoulder_link"/>
+		<origin xyz="0 0 ${z_j1}" rpy="0 0 0"/>
+		<axis xyz="0 0 1"/>
+		<limit lower="-${pi}" upper="${pi}" effort="150" velocity="2.0"/>
+		<dynamics damping="0.5" friction="0.1"/>
+	</joint>
+	<joint name="shoulder_lift_joint" type="revolute">
+		<parent link="shoulder_link"/>
+		<child link="upper_arm_link"/>
+		<origin xyz="0 0 ${z_j2}" rpy="0 0 0"/>
+		<axis xyz="0 1 0"/>
+		<limit lower="-${pi/2}" upper="${pi/2}" effort="150" velocity="2.0"/>
+		<dynamics damping="0.5" friction="0.1"/>
+	</joint>
+	<joint name="elbow_joint" type="revolute">
+		<parent link="upper_arm_link"/>
+		<child link="middle_arm_1_link"/>
+		<origin xyz="0 0 ${z_j3}" rpy="0 0 0"/>
+		<axis xyz="0 1 0"/>
+		<limit lower="-2.60" upper="2.60" effort="100" velocity="2.5"/>
+		<dynamics damping="0.4" friction="0.08"/>
+	</joint>
+	<joint name="middle_arm_joint" type="revolute">
+		<parent link="middle_arm_1_link"/>
+		<child link="middle_arm_2_link"/>
+		<origin xyz="0 0 ${z_j4}" rpy="0 0 0"/>
+		<axis xyz="0 0 1"/>
+		<limit lower="-3.14159" upper="3.14159" effort="50" velocity="3.0"/>
+		<dynamics damping="0.2" friction="0.05"/>
+	</joint>
+	<joint name="elbow_2_joint" type="revolute">
+		<parent link="middle_arm_2_link"/>
+		<child link="wrist_link"/>
+		<origin xyz="0 0 ${z_j5}" rpy="0 0 0"/>
+		<axis xyz="0 1 0"/>
+		<limit lower="-2.10" upper="2.10" effort="50" velocity="3.0"/>
+		<dynamics damping="0.2" friction="0.05"/>
+	</joint>
+	<joint name="wrist_joint" type="revolute">
+		<parent link="wrist_link"/>
+		<child link="wrist_2_link"/>
+		<origin xyz="0 0 ${z_j6}" rpy="0 0 0"/>
+		<axis xyz="0 0 1"/>
+		<limit lower="-3.14159" upper="3.14159" effort="30" velocity="3.0"/>
+		<dynamics damping="0.1" friction="0.05"/>
+	</joint>
+	<joint name="tool_endeffektor_joint" type="fixed">
+		<parent link="wrist_2_link"/>
+		<child link="tool0"/>
+		<origin xyz="0 0 ${z_tool}" rpy="0 0 0"/>
+	</joint>
+	<joint name="gripper_base_joint" type="fixed">
+		<parent link="tool0"/>
+		<child link="gripper_base"/>
+		<origin xyz="0 0 0" rpy="0 0 0"/>
+	</joint>
+
+	<!-- left Finger: positiv = open (+y). -->
+	<joint name="gripper_left_joint" type="prismatic">
+		<parent link="gripper_base"/>
+		<child link="gripper_left_finger"/>
+		<origin xyz="0 0 ${z_finger}" rpy="0 0 0"/>
+		<axis xyz="0 1 0"/>
+		<limit lower="0.0" upper="0.035" effort="40" velocity="0.15"/>
+		<dynamics damping="2.0" friction="0.5"/>
+	</joint>
+	<joint name="gripper_right_joint" type="prismatic">
+		<parent link="gripper_base"/>
+		<child link="gripper_right_finger"/>
+		<origin xyz="0 0 ${z_finger}" rpy="0 0 3.14159265"/>
+		<axis xyz="0 1 0"/>
+		<limit lower="0.0" upper="0.035" effort="40" velocity="0.15"/>
+		<dynamics damping="2.0" friction="0.5"/>
+		<mimic joint="gripper_left_joint" multiplier="1.0" offset="0.0"/>
+	</joint>
+
+	<!-- ===================== ros2_control ===================== -->
+	<ros2_control name="Arm6MeshSystem" type="system">
+		<hardware>
+			<xacro:if value="$(arg use_gazebo)">
+				<plugin>gz_ros2_control/GazeboSimSystem</plugin>
+			</xacro:if>
+			<xacro:unless value="$(arg use_gazebo)">
+				<plugin>mock_components/GenericSystem</plugin>
+			</xacro:unless>
+		</hardware>
+		<xacro:position_joint_iface name="shoulder_rotation_joint" min="-3.14159" max="3.14159"/>
+		<xacro:position_joint_iface name="shoulder_lift_joint" min="-1.75" max="1.75"/>
+		<xacro:position_joint_iface name="elbow_joint" min="-2.60" max="2.60"/>
+		<xacro:position_joint_iface name="middle_arm_joint" min="-3.14159" max="3.14159"/>
+		<xacro:position_joint_iface name="elbow_2_joint" min="-2.10" max="2.10"/>
+		<xacro:position_joint_iface name="wrist_joint" min="-3.14159" max="3.14159"/>
+		<xacro:position_joint_iface name="gripper_left_joint" min="0.0" max="0.035"/>
+	</ros2_control>
+
+	<xacro:if value="$(arg use_gazebo)">
+		<gazebo>
+			<plugin filename="gz_ros2_control-system" name="gz_ros2_control::GazeboSimROS2ControlPlugin">
+				<parameters>$(arg controllers_file)</parameters>
+			</plugin>
+		</gazebo>
+	</xacro:if>
+
+</robot>

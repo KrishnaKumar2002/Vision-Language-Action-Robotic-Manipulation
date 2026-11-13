@@ -1,5 +1,22 @@
-# Object file
-*.o
+# ROS 2 Colcon Build Artifacts
+build/
+install/
+log/
 
-# Ada Library Information
+# Object files & compiled binaries
+*.o
 *.ali
+
+# Python Cache & Bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+
+# IDE & OS Artifacts
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*~

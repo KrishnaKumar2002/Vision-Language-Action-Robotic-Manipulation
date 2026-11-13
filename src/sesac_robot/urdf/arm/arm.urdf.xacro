@@ -1,0 +1,253 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="arm6">
+
+  <!-- use_gazebo:=true  -> gz_ros2_control (Gazebo), sonst Mock-Hardware (RViz2) -->
+  <xacro:arg name="use_gazebo" default="false"/>
+  <xacro:arg name="controllers_file" default=""/>
+
+  <xacro:include filename="../common/materials.xacro"/>
+  <xacro:include filename="../common/inertials.xacro"/>
+
+  <xacro:property name="pi_half" value="${pi/2}"/>
+
+  <!--
+    Armsegment: Quader-Balken entlang +z, dazu eine Gelenkkappe (Zylinder entlang y)
+    im Ursprung des Links (= Position des vorgelagerten Gelenks).
+  -->
+  <xacro:macro name="arm_segment" params="name length width mass mat cap_mat cap_len">
+    <link name="${name}">
+      <visual>
+        <origin xyz="0 0 ${length/2}"/>
+        <geometry><box size="${width} ${width} ${length}"/></geometry>
+        <material name="${mat}"/>
+      </visual>
+      <visual>
+        <origin xyz="0 0 0" rpy="${pi_half} 0 0"/>
+        <geometry><cylinder radius="${width*0.75}" length="${cap_len}"/></geometry>
+        <material name="${cap_mat}"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 ${length/2}"/>
+        <geometry><box size="${width} ${width} ${length}"/></geometry>
+      </collision>
+      <xacro:inertial_box mass="${mass}" x="${width}" y="${width}" z="${length}">
+        <origin xyz="0 0 ${length/2}"/>
+      </xacro:inertial_box>
+    </link>
+  </xacro:macro>
+
+  <!-- Handgelenk-Segment: Zylinder entlang z + Kappe entlang y -->
+  <xacro:macro name="wrist_segment" params="name length radius mass mat cap_mat">
+    <link name="${name}">
+      <visual>
+        <origin xyz="0 0 ${length/2}"/>
+        <geometry><cylinder radius="${radius}" length="${length}"/></geometry>
+        <material name="${mat}"/>
+      </visual>
+      <visual>
+        <origin xyz="0 0 0" rpy="${pi_half} 0 0"/>
+        <geometry><cylinder radius="${radius*1.1}" length="${radius*2.2}"/></geometry>
+        <material name="${cap_mat}"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 ${length/2}"/>
+        <geometry><cylinder radius="${radius}" length="${length}"/></geometry>
+      </collision>
+      <xacro:inertial_cylinder mass="${mass}" radius="${radius}" length="${length}">
+        <origin xyz="0 0 ${length/2}"/>
+      </xacro:inertial_cylinder>
+    </link>
+  </xacro:macro>
+
+  <!-- ros2_control-Schnittstelle für ein Gelenk -->
+  <xacro:macro name="position_joint_iface" params="name min max">
+    <joint name="${name}">
+      <command_interface name="position">
+        <param name="min">${min}</param>
+        <param name="max">${max}</param>
+      </command_interface>
+      <state_interface name="position"><param name="initial_value">0.0</param></state_interface>
+      <state_interface name="velocity"/>
+    </joint>
+  </xacro:macro>
+
+  <!-- ================= Links & Joints ================= -->
+
+  <!-- Base Link -->
+  <link name="base_link">
+    <visual>
+      <origin xyz="0 0 0.015"/>
+      <geometry><cylinder radius="0.15" length="0.03"/></geometry>
+      <material name="dark_grey"/>
+    </visual>
+    <visual>
+      <origin xyz="0 0 0.065"/>
+      <geometry><cylinder radius="0.09" length="0.07"/></geometry>
+      <material name="steel"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0.05"/>
+      <geometry><cylinder radius="0.15" length="0.10"/></geometry>
+    </collision>
+    <xacro:inertial_cylinder mass="5.0" radius="0.15" length="0.10">
+      <origin xyz="0 0 0.05"/>
+    </xacro:inertial_cylinder>
+  </link>
+
+  <!-- Schulter-Rotation -->
+  <link name="link_1">
+    <visual>
+      <origin xyz="0 0 0.05"/>
+      <geometry><cylinder radius="0.085" length="0.10"/></geometry>
+      <material name="blue"/>
+    </visual>
+    <visual>
+      <origin xyz="0 0 0.11"/>
+      <geometry><box size="0.10 0.15 0.10"/></geometry>
+      <material name="blue"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0.08"/>
+      <geometry><cylinder radius="0.085" length="0.16"/></geometry>
+    </collision>
+    <xacro:inertial_cylinder mass="3.0" radius="0.085" length="0.16">
+      <origin xyz="0 0 0.08"/>
+    </xacro:inertial_cylinder>
+  </link>
+
+  <xacro:arm_segment name="link_2" length="0.40" width="0.09" mass="4.0"
+                     mat="light_grey" cap_mat="orange" cap_len="0.17"/>
+  <xacro:arm_segment name="link_3" length="0.35" width="0.07" mass="2.5"
+                     mat="blue" cap_mat="orange" cap_len="0.13"/>
+  <xacro:wrist_segment name="link_4" length="0.09" radius="0.04" mass="0.8"
+                       mat="steel" cap_mat="orange"/>
+  <xacro:wrist_segment name="link_5" length="0.08" radius="0.04" mass="0.6"
+                       mat="light_grey" cap_mat="orange"/>
+  <xacro:wrist_segment name="link_6" length="0.05" radius="0.035" mass="0.3"
+                       mat="dark_grey" cap_mat="orange"/>
+
+  <joint name="joint_1" type="revolute">
+    <parent link="base_link"/><child link="link_1"/>
+    <origin xyz="0 0 0.10"/><axis xyz="0 0 1"/>
+    <limit lower="-3.14" upper="3.14" effort="150" velocity="2.0"/>
+    <dynamics damping="0.5" friction="0.1"/>
+  </joint>
+  <joint name="joint_2" type="revolute">
+    <parent link="link_1"/><child link="link_2"/>
+    <origin xyz="0 0 0.11"/><axis xyz="0 1 0"/>
+    <limit lower="-1.7" upper="1.7" effort="150" velocity="2.0"/>
+    <dynamics damping="0.5" friction="0.1"/>
+  </joint>
+  <joint name="joint_3" type="revolute">
+    <parent link="link_2"/><child link="link_3"/>
+    <origin xyz="0 0 0.40"/><axis xyz="0 1 0"/>
+    <limit lower="-2.5" upper="2.5" effort="100" velocity="2.0"/>
+    <dynamics damping="0.5" friction="0.1"/>
+  </joint>
+  <joint name="joint_4" type="revolute">
+    <parent link="link_3"/><child link="link_4"/>
+    <origin xyz="0 0 0.35"/><axis xyz="0 1 0"/>
+    <limit lower="-2.5" upper="2.5" effort="50" velocity="3.0"/>
+    <dynamics damping="0.2" friction="0.05"/>
+  </joint>
+  <joint name="joint_5" type="revolute">
+    <parent link="link_4"/><child link="link_5"/>
+    <origin xyz="0 0 0.09"/><axis xyz="0 0 1"/>
+    <limit lower="-3.14" upper="3.14" effort="50" velocity="3.0"/>
+    <dynamics damping="0.2" friction="0.05"/>
+  </joint>
+  <joint name="joint_6" type="revolute">
+    <parent link="link_5"/><child link="link_6"/>
+    <origin xyz="0 0 0.08"/><axis xyz="0 1 0"/>
+    <limit lower="-3.14" upper="3.14" effort="30" velocity="3.0"/>
+    <dynamics damping="0.1" friction="0.05"/>
+  </joint>
+
+  <!-- tool connector -->
+  <link name="tool0"/>
+  <joint name="tool0_joint" type="fixed">
+    <parent link="link_6"/><child link="tool0"/>
+    <origin xyz="0 0 0.05"/>
+  </joint>
+
+  <!-- ================= Greifer ================= -->
+  <link name="gripper_base">
+    <visual>
+      <origin xyz="0 0 0.02"/>
+      <geometry><box size="0.05 0.10 0.04"/></geometry>
+      <material name="dark_grey"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0.02"/>
+      <geometry><box size="0.05 0.10 0.04"/></geometry>
+    </collision>
+    <xacro:inertial_box mass="0.4" x="0.05" y="0.10" z="0.04">
+      <origin xyz="0 0 0.02"/>
+    </xacro:inertial_box>
+  </link>
+  <joint name="gripper_base_joint" type="fixed">
+    <parent link="tool0"/><child link="gripper_base"/>
+    <origin xyz="0 0 0"/>
+  </joint>
+
+  <xacro:macro name="finger" params="side">
+    <link name="gripper_${side}_finger">
+      <visual>
+        <origin xyz="0 0 0.03"/>
+        <geometry><box size="0.025 0.012 0.06"/></geometry>
+        <material name="orange"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0.03"/>
+        <geometry><box size="0.025 0.012 0.06"/></geometry>
+      </collision>
+      <xacro:inertial_box mass="0.05" x="0.025" y="0.012" z="0.06">
+        <origin xyz="0 0 0.03"/>
+      </xacro:inertial_box>
+    </link>
+  </xacro:macro>
+  <xacro:finger side="left"/>
+  <xacro:finger side="right"/>
+
+  <!-- Linker Finger: positiv = öffnen. Rechter Finger folgt per mimic. -->
+  <joint name="gripper_left_joint" type="prismatic">
+    <parent link="gripper_base"/><child link="gripper_left_finger"/>
+    <origin xyz="0 0.012 0.04"/><axis xyz="0 1 0"/>
+    <limit lower="0.0" upper="0.03" effort="20" velocity="0.1"/>
+  </joint>
+  <joint name="gripper_right_joint" type="prismatic">
+    <parent link="gripper_base"/><child link="gripper_right_finger"/>
+    <origin xyz="0 -0.012 0.04"/><axis xyz="0 -1 0"/>
+    <limit lower="0.0" upper="0.03" effort="20" velocity="0.1"/>
+    <mimic joint="gripper_left_joint" multiplier="1.0" offset="0.0"/>
+  </joint>
+
+  <!-- ================= ros2_control ================= -->
+  <ros2_control name="Arm6System" type="system">
+    <hardware>
+      <xacro:if value="$(arg use_gazebo)">
+        <plugin>gz_ros2_control/GazeboSimSystem</plugin>
+      </xacro:if>
+      <xacro:unless value="$(arg use_gazebo)">
+        <plugin>mock_components/GenericSystem</plugin>
+      </xacro:unless>
+    </hardware>
+    <xacro:position_joint_iface name="joint_1" min="-3.14" max="3.14"/>
+    <xacro:position_joint_iface name="joint_2" min="-1.7" max="1.7"/>
+    <xacro:position_joint_iface name="joint_3" min="-2.5" max="2.5"/>
+    <xacro:position_joint_iface name="joint_4" min="-2.5" max="2.5"/>
+    <xacro:position_joint_iface name="joint_5" min="-3.14" max="3.14"/>
+    <xacro:position_joint_iface name="joint_6" min="-3.14" max="3.14"/>
+    <xacro:position_joint_iface name="gripper_left_joint" min="0.0" max="0.03"/>
+  </ros2_control>
+
+  <xacro:if value="$(arg use_gazebo)">
+    <gazebo>
+      <plugin filename="gz_ros2_control-system"
+              name="gz_ros2_control::GazeboSimROS2ControlPlugin">
+        <parameters>$(arg controllers_file)</parameters>
+      </plugin>
+    </gazebo>
+  </xacro:if>
+
+</robot>

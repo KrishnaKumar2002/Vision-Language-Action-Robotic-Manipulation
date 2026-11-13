@@ -1,0 +1,212 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="rover6">
+
+  <!-- use_gazebo:=true aktiviert die Gazebo-Plugins (DiffDrive, JointStatePublisher) -->
+  <xacro:arg name="use_gazebo" default="false"/>
+
+  <xacro:include filename="../common/materials.xacro"/>
+  <xacro:include filename="../common/inertials.xacro"/>
+
+  <xacro:property name="pi_half" value="${pi/2}"/>
+
+  <!-- Maße -->
+  <xacro:property name="wheel_radius" value="0.08"/>
+  <xacro:property name="wheel_width" value="0.06"/>
+  <xacro:property name="wheel_y" value="0.22"/>
+  <xacro:property name="wheel_x_offset" value="0.22"/>
+  <xacro:property name="chassis_x" value="0.62"/>
+  <xacro:property name="chassis_y" value="0.34"/>
+  <xacro:property name="chassis_z" value="0.10"/>
+
+  <!-- ================= Rumpf ================= -->
+  <link name="base_footprint"/>
+
+  <link name="base_link">
+    <!-- Hauptkörper -->
+    <visual>
+      <origin xyz="0 0 0.01"/>
+      <geometry><box size="${chassis_x} ${chassis_y} ${chassis_z}"/></geometry>
+      <material name="blue"/>
+    </visual>
+    <!-- Deckel -->
+    <visual>
+      <origin xyz="0 0 0.075"/>
+      <geometry><box size="0.52 0.30 0.03"/></geometry>
+      <material name="orange"/>
+    </visual>
+    <!-- Frontstoßstange -->
+    <visual>
+      <origin xyz="0.325 0 -0.01"/>
+      <geometry><box size="0.03 0.30 0.06"/></geometry>
+      <material name="dark_grey"/>
+    </visual>
+    <!-- Scheinwerfer -->
+    <visual>
+      <origin xyz="0.312 0.11 0.03" rpy="0 ${pi_half} 0"/>
+      <geometry><cylinder radius="0.022" length="0.012"/></geometry>
+      <material name="light_grey"/>
+    </visual>
+    <visual>
+      <origin xyz="0.312 -0.11 0.03" rpy="0 ${pi_half} 0"/>
+      <geometry><cylinder radius="0.022" length="0.012"/></geometry>
+      <material name="light_grey"/>
+    </visual>
+    <!-- Heckleuchten -->
+    <visual>
+      <origin xyz="-0.312 0.11 0.03"/>
+      <geometry><box size="0.012 0.05 0.025"/></geometry>
+      <material name="red"/>
+    </visual>
+    <visual>
+      <origin xyz="-0.312 -0.11 0.03"/>
+      <geometry><box size="0.012 0.05 0.025"/></geometry>
+      <material name="red"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0.01"/>
+      <geometry><box size="${chassis_x} ${chassis_y} ${chassis_z}"/></geometry>
+    </collision>
+    <xacro:inertial_box mass="12.0" x="${chassis_x}" y="${chassis_y}" z="${chassis_z}">
+      <origin xyz="0 0 0.01"/>
+    </xacro:inertial_box>
+  </link>
+
+  <joint name="base_footprint_joint" type="fixed">
+    <parent link="base_footprint"/><child link="base_link"/>
+    <origin xyz="0 0 ${wheel_radius}"/>
+  </joint>
+
+  <!-- ================= Räder ================= -->
+  <xacro:macro name="wheel" params="name x side">
+    <link name="${name}_link">
+      <visual>
+        <geometry><cylinder radius="${wheel_radius}" length="${wheel_width}"/></geometry>
+        <origin rpy="${pi_half} 0 0"/>
+        <material name="black"/>
+      </visual>
+      <visual>
+        <geometry><cylinder radius="0.05" length="${wheel_width + 0.002}"/></geometry>
+        <origin rpy="${pi_half} 0 0"/>
+        <material name="steel"/>
+      </visual>
+      <visual>
+        <geometry><cylinder radius="0.02" length="${wheel_width + 0.008}"/></geometry>
+        <origin rpy="${pi_half} 0 0"/>
+        <material name="orange"/>
+      </visual>
+      <collision>
+        <geometry><cylinder radius="${wheel_radius}" length="${wheel_width}"/></geometry>
+        <origin rpy="${pi_half} 0 0"/>
+      </collision>
+      <xacro:inertial_cylinder mass="0.8" radius="${wheel_radius}" length="${wheel_width}">
+        <origin rpy="${pi_half} 0 0"/>
+      </xacro:inertial_cylinder>
+    </link>
+
+    <joint name="${name}_joint" type="continuous">
+      <parent link="base_link"/><child link="${name}_link"/>
+      <origin xyz="${x} ${side*wheel_y} 0"/>
+      <axis xyz="0 1 0"/>
+      <dynamics damping="0.05" friction="0.02"/>
+    </joint>
+
+    <gazebo reference="${name}_link">
+      <mu1>1.0</mu1>
+      <mu2>0.6</mu2>
+    </gazebo>
+  </xacro:macro>
+
+  <xacro:wheel name="wheel_fl" x="${wheel_x_offset}"  side="1"/>
+  <xacro:wheel name="wheel_ml" x="0"                  side="1"/>
+  <xacro:wheel name="wheel_rl" x="${-wheel_x_offset}" side="1"/>
+  <xacro:wheel name="wheel_fr" x="${wheel_x_offset}"  side="-1"/>
+  <xacro:wheel name="wheel_mr" x="0"                  side="-1"/>
+  <xacro:wheel name="wheel_rr" x="${-wheel_x_offset}" side="-1"/>
+
+  <!-- ================= Aufbauten ================= -->
+  <!-- Lidar auf Mast -->
+  <link name="lidar_mast">
+    <visual>
+      <origin xyz="0 0 0.04"/>
+      <geometry><cylinder radius="0.012" length="0.08"/></geometry>
+      <material name="steel"/>
+    </visual>
+  </link>
+  <joint name="lidar_mast_joint" type="fixed">
+    <parent link="base_link"/><child link="lidar_mast"/>
+    <origin xyz="-0.10 0 0.09"/>
+  </joint>
+
+  <link name="lidar_link">
+    <visual>
+      <origin xyz="0 0 0.02"/>
+      <geometry><cylinder radius="0.04" length="0.04"/></geometry>
+      <material name="dark_grey"/>
+    </visual>
+    <visual>
+      <origin xyz="0 0 0.042"/>
+      <geometry><cylinder radius="0.03" length="0.006"/></geometry>
+      <material name="glass"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0.02"/>
+      <geometry><cylinder radius="0.04" length="0.04"/></geometry>
+    </collision>
+    <xacro:inertial_cylinder mass="0.2" radius="0.04" length="0.04">
+      <origin xyz="0 0 0.02"/>
+    </xacro:inertial_cylinder>
+  </link>
+  <joint name="lidar_joint" type="fixed">
+    <parent link="lidar_mast"/><child link="lidar_link"/>
+    <origin xyz="0 0 0.08"/>
+  </joint>
+
+  <!-- Kamera vorne -->
+  <link name="camera_link">
+    <visual>
+      <geometry><box size="0.03 0.08 0.03"/></geometry>
+      <material name="dark_grey"/>
+    </visual>
+    <visual>
+      <origin xyz="0.016 0 0" rpy="0 ${pi_half} 0"/>
+      <geometry><cylinder radius="0.01" length="0.006"/></geometry>
+      <material name="glass"/>
+    </visual>
+    <collision>
+      <geometry><box size="0.03 0.08 0.03"/></geometry>
+    </collision>
+    <xacro:inertial_box mass="0.1" x="0.03" y="0.08" z="0.03">
+      <origin xyz="0 0 0"/>
+    </xacro:inertial_box>
+  </link>
+  <joint name="camera_joint" type="fixed">
+    <parent link="base_link"/><child link="camera_link"/>
+    <origin xyz="0.26 0 0.11"/>
+  </joint>
+
+  <!-- ================= Gazebo (gz-sim) ================= -->
+  <xacro:if value="$(arg use_gazebo)">
+    <gazebo>
+      <plugin filename="gz-sim-joint-state-publisher-system"
+              name="gz::sim::systems::JointStatePublisher"/>
+      <plugin filename="gz-sim-diff-drive-system"
+              name="gz::sim::systems::DiffDrive">
+        <left_joint>wheel_fl_joint</left_joint>
+        <left_joint>wheel_ml_joint</left_joint>
+        <left_joint>wheel_rl_joint</left_joint>
+        <right_joint>wheel_fr_joint</right_joint>
+        <right_joint>wheel_mr_joint</right_joint>
+        <right_joint>wheel_rr_joint</right_joint>
+        <wheel_separation>${2*wheel_y}</wheel_separation>
+        <wheel_radius>${wheel_radius}</wheel_radius>
+        <max_linear_acceleration>1.0</max_linear_acceleration>
+        <topic>cmd_vel</topic>
+        <odom_topic>odom</odom_topic>
+        <tf_topic>tf</tf_topic>
+        <frame_id>odom</frame_id>
+        <child_frame_id>base_footprint</child_frame_id>
+      </plugin>
+    </gazebo>
+  </xacro:if>
+
+</robot>
