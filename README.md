@@ -11,11 +11,15 @@ An end-to-end, ML-driven **Vision-Language-Action (VLA)** robotic manipulation s
 **No predefined coordinates in Python lists.** The system estimates object 3D positions and generates action deltas directly from camera photons and depth rays.
 
 <p align="center">
-  <img src="docs/images/vla_hero_multi_docking.jpg" alt="VLA Autonomous Robotic Manipulation Demo" width="95%">
+  <img src="docs/images/vla_live_execution.gif" alt="Autonomous VLA Manipulation Live Demo" width="95%">
 </p>
 <p align="center">
-  <em>Figure 1: Full VLA System Simulation in RViz2 — 6-DOF robot arm executing dynamic language commands, negotiating the laser safety barrier with a green high-arch trajectory ribbon, and sequentially staging payloads onto dedicated non-overlapping multi-bay docking pads.</em>
+  <em>Figure 1: Autonomous Multi-Task Execution in RViz2 — 6-DOF robot arm executing sequential language instructions, negotiating the laser safety barrier with dynamic trajectory ribbons, and staging payloads across dedicated landing bays.</em>
 </p>
+
+> 🎥 **Full 4-Minute Uncut Screen Recording (Nov 13, 2026)**:
+> - **[▶️ Stream / Download Web-Optimized MP4 (16 MB)](docs/videos/vla_autonomous_manipulation_demo.mp4)** — Instant playback, fast-start streaming.
+> - **[📁 Original Apple QuickTime Master Recording (89 MB)](docs/videos/Screen%20Recording%202026-11-13%20at%208.42.31%E2%80%AFPM.mov)** — High-bitrate master screen recording from macOS.
 
 ---
 
@@ -42,6 +46,31 @@ The system features an autonomous **Multi-Command Task Queue** allowing operator
 |:---:|:---:|
 | <img src="docs/images/vla_collision_avoidance_arc.jpg" width="100%" alt="Obstacle Clearance Arc"> | <img src="docs/images/vla_demo_05_all_three_docked.jpg" width="100%" alt="All Three Payloads Staged"> |
 | *Neon trajectory ribbon cruising $>22\,\text{cm}$ above the laser barrier with zero payload or arm collision.* | *All 3 objects autonomously staged: Red Can (Bay 01A), Blue Mug (Bay 01B), Green Flask (Bay 01C).* |
+
+---
+
+### 2. High-Resolution Screen Recording Timeline Gallery (00:00 - 04:08)
+Captured directly from `Screen Recording 2026-11-13 at 8.42.31 PM.mov`:
+
+| **00:10 — Workspace Initialization** | **00:45 — Command 1: Red Can Grasp** |
+|:---:|:---:|
+| <img src="docs/images/vla_frame_01_startup.jpg" width="100%" alt="Startup"> | <img src="docs/images/vla_frame_02_red_pick.jpg" width="100%" alt="Red Pick"> |
+| *RViz2 studio setup with 6-DOF arm, 3-bay docking platform, and active amber laser barrier.* | *Operator dispatches instruction; vision pipeline tracks centroid and arm initiates grasp.* |
+
+| **01:30 — Red Can High-Bridge Cruise** | **02:10 — Precision Landing on Bay 01A** |
+|:---:|:---:|
+| <img src="docs/images/vla_frame_03_red_barrier_cross.jpg" width="100%" alt="Red Barrier Cross"> | <img src="docs/images/vla_frame_04_red_docked.jpg" width="100%" alt="Red Docked"> |
+| *High-bridge plateau maintains $z = 0.44\,\text{m}$ clearance over the laser barrier corridor.* | *Red Can positioned squarely on landing pad 01A with coordinate state persistence.* |
+
+| **02:55 — Command 2: Blue Mug Transfer** | **03:30 — Command 3: Green Flask Trans-Reach** |
+|:---:|:---:|
+| <img src="docs/images/vla_frame_05_blue_transfer.jpg" width="100%" alt="Blue Transfer"> | <img src="docs/images/vla_frame_06_green_pick.jpg" width="100%" alt="Green Pick"> |
+| *Autonomous task queue pops next task; blue mug guided along outer flank into Bay 01B.* | *Robot extends to far workspace boundary ($y = -0.35\,\text{m}$) to grasp the green specimen flask.* |
+
+| **03:55 — Green High-Bridge Trajectory Ribbon** | **04:05 — All 3 Payloads Docked (0 Collisions)** |
+|:---:|:---:|
+| <img src="docs/images/vla_frame_07_green_barrier_arc.jpg" width="100%" alt="Green Barrier Arc"> | <img src="docs/images/vla_frame_08_all_docked.jpg" width="100%" alt="All Docked"> |
+| *Neon emerald ribbon displays the trans-workspace arc safely cruising above the barrier.* | *All 3 items staged on dedicated non-overlapping bays (01A, 01B, 01C) with physical air gaps.* |
 
 ---
 
