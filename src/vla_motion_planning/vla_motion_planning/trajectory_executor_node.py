@@ -128,6 +128,13 @@ class TrajectoryExecutorNode(Node):
         self.obstacle = {'name': 'barrier', 'pos': [0.38, 0.05, 0.10], 'size': [0.04, 0.22, 0.20]}
         self.platform = {'name': 'target_platform', 'pos': [0.35, 0.30, 0.02]}
 
+        # Dedicated Non-Overlapping Multi-Bay Staging Slots on Platform (Radius = 0.13m)
+        self.docking_slots = {
+            'red_box': [0.30, 0.25, 0.065],    # Bay 01A (West): Soda Can
+            'blue_box': [0.40, 0.25, 0.045],   # Bay 01B (East): Ceramic Mug
+            'green_box': [0.35, 0.35, 0.065],  # Bay 01C (North): Specimen Flask
+        }
+
         self.publish_static_environment()
 
         self.home_q = [0.0, 0.4, 1.2, 0.0, 0.6, 0.0]
@@ -218,11 +225,8 @@ class TrajectoryExecutorNode(Node):
             except Exception:
                 p_src = np.array(self.objects[target_frame]['pos'])
 
-            try:
-                t_dst = self.tf_buffer.lookup_transform('base_link', dest_frame, rclpy.time.Time())
-                p_dst = np.array([t_dst.transform.translation.x, t_dst.transform.translation.y, t_dst.transform.translation.z])
-            except Exception:
-                p_dst = np.array(self.platform['pos'])
+            # Resolve Dedicated Non-Overlapping Target Slot for this payload
+            p_dst = np.array(self.docking_slots.get(target_frame, self.platform['pos']))
 
             self.get_logger().info(f'Planning Collision-Aware Trajectory from {p_src} to {p_dst} (Obstacle Avoidance={avoid_obs})...')
             self.build_collision_aware_trajectory(p_src, p_dst, target_frame, avoid_obs)
@@ -352,14 +356,14 @@ class TrajectoryExecutorNode(Node):
 
             elif action[0] == 'DETACH':
                 _, obj_name, _ = action
-                # Release onto delivery dock
-                dock_pos = [0.35, 0.30, 0.065]
+                # Release onto dedicated non-overlapping docking slot
+                dock_pos = list(self.docking_slots.get(obj_name, [0.35, 0.30, 0.065]))
                 self.objects[obj_name]['pos'] = dock_pos
                 self.delivered_objects.add(obj_name)
                 self.delivered_payload = obj_name
                 self.carried_object = None
 
-                # Notify camera simulator of permanent placement on dock
+                # Notify camera simulator of permanent placement on dedicated slot
                 carried_msg = String()
                 carried_msg.data = json.dumps({
                     'object_id': obj_name,
@@ -367,7 +371,7 @@ class TrajectoryExecutorNode(Node):
                 })
                 self.pub_carried_pose.publish(carried_msg)
 
-                self.get_logger().info(f'>>> RELEASE: {self.objects[obj_name]["label"]} delivered safely onto Docking Bay 01.')
+                self.get_logger().info(f'>>> RELEASE: {self.objects[obj_name]["label"]} delivered safely onto Docking Bay Slot at {dock_pos}.')
                 self.trajectory_queue.pop(0)
 
             elif action[0] == 'HOME':
@@ -540,21 +544,43 @@ class TrajectoryExecutorNode(Node):
         m_dock_ring2.color.r, m_dock_ring2.color.g, m_dock_ring2.color.b, m_dock_ring2.color.a = (0.95, 0.95, 0.98, 0.95)
         markers.markers.append(m_dock_ring2)
 
-        # 4. Golden Center Bullseye Landing Target
-        m_dock_bullseye = Marker()
-        m_dock_bullseye.header.stamp = stamp
-        m_dock_bullseye.header.frame_id = 'base_link'
-        m_dock_bullseye.ns = 'dock'
-        m_dock_bullseye.id = 23
-        m_dock_bullseye.type = Marker.CYLINDER
-        m_dock_bullseye.action = Marker.ADD
-        m_dock_bullseye.pose.position.x, m_dock_bullseye.pose.position.y = dx, dy
-        m_dock_bullseye.pose.position.z = 0.019
-        m_dock_bullseye.pose.orientation.w = 1.0
-        m_dock_bullseye.scale.x = m_dock_bullseye.scale.y = 0.065
-        m_dock_bullseye.scale.z = 0.004
-        m_dock_bullseye.color.r, m_dock_bullseye.color.g, m_dock_bullseye.color.b, m_dock_bullseye.color.a = (1.0, 0.80, 0.05, 1.0)
-        markers.markers.append(m_dock_bullseye)
+        # 4. Multi-Bay Staging Pads (Bay 01A - Red Can, Bay 01B - Blue Mug, Bay 01C - Green Flask)
+        bay_pads = [
+            (30, 0.30, 0.25, (0.90, 0.25, 0.25, 0.85)), # Bay A (West: Can)
+            (31, 0.40, 0.25, (0.25, 0.55, 0.95, 0.85)), # Bay B (East: Mug)
+            (32, 0.35, 0.35, (0.25, 0.85, 0.45, 0.85)), # Bay C (North: Flask)
+        ]
+        for pad_id, px, py, p_col in bay_pads:
+            m_pad = Marker()
+            m_pad.header.stamp = stamp
+            m_pad.header.frame_id = 'base_link'
+            m_pad.ns = 'dock'
+            m_pad.id = pad_id
+            m_pad.type = Marker.CYLINDER
+            m_pad.action = Marker.ADD
+            m_pad.pose.position.x, m_pad.pose.position.y = px, py
+            m_pad.pose.position.z = 0.019
+            m_pad.pose.orientation.w = 1.0
+            m_pad.scale.x = m_pad.scale.y = 0.068
+            m_pad.scale.z = 0.003
+            m_pad.color.r, m_pad.color.g, m_pad.color.b, m_pad.color.a = p_col
+            markers.markers.append(m_pad)
+
+            # Central alignment target pin
+            m_pin = Marker()
+            m_pin.header.stamp = stamp
+            m_pin.header.frame_id = 'base_link'
+            m_pin.ns = 'dock'
+            m_pin.id = pad_id + 10
+            m_pin.type = Marker.CYLINDER
+            m_pin.action = Marker.ADD
+            m_pin.pose.position.x, m_pin.pose.position.y = px, py
+            m_pin.pose.position.z = 0.021
+            m_pin.pose.orientation.w = 1.0
+            m_pin.scale.x = m_pin.scale.y = 0.022
+            m_pin.scale.z = 0.004
+            m_pin.color.r, m_pin.color.g, m_pin.color.b, m_pin.color.a = (1.0, 0.85, 0.15, 1.0)
+            markers.markers.append(m_pin)
 
         # 5. 4 Corner Glowing LED Guide Beacons
         beacon_offsets = [(0.11, 0.11), (0.11, -0.11), (-0.11, 0.11), (-0.11, -0.11)]
