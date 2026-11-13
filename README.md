@@ -13,29 +13,29 @@ An end-to-end **Vision-Language-Action (VLA)** robotic manipulation system in RO
 
 ```mermaid
 flowchart TD
-    subgraph HumanInput["1. Human Input Layer"]
-        CLI["Natural Language Prompt\n(e.g., 'Pick up the red soda can...')"]
+    subgraph HumanInput ["1. Human Input Layer"]
+        CLI["Human Natural Language Prompt<br/>e.g., 'Pick up the red soda can...'"]
     end
 
-    subgraph PerceptionLayer["2. Perceptual Vision Layer (vla_perception)"]
-        DetNode["vla_object_detector\n(detector_node.py)"]
-        Catalog[("3D Object Catalog\n{ID, Class, Color, 3D Pose}")]
+    subgraph PerceptionLayer ["2. Perceptual Vision Layer (vla_perception)"]
+        DetNode["vla_object_detector<br/>(detector_node.py)"]
+        Catalog[("3D Object Catalog<br/>ID, Class, Color, 3D Pose")]
         DetNode --> Catalog
     end
 
-    subgraph TaskPlanner["3. Language Grounding & Planning (vla_task_planner)"]
-        LangNode["vla_language_task_planner\n(language_task_node.py)"]
+    subgraph TaskPlanner ["3. Language Grounding & Planning (vla_task_planner)"]
+        LangNode["vla_language_task_planner<br/>(language_task_node.py)"]
         NLPParser["NLP Intent & Lexical Parser"]
-        Grounding["Multi-Modal Grounding Engine\n(Matches Nouns/Colors to 3D Visual Catalog)"]
+        Grounding["Multi-Modal Grounding Engine<br/>Matches Nouns & Colors to 3D Catalog"]
         LangNode --> NLPParser
         NLPParser --> Grounding
     end
 
-    subgraph MotionPlanner["4. Kinematics & Motion Control (vla_motion_planning)"]
-        TrajNode["vla_trajectory_executor\n(trajectory_executor_node.py)"]
-        DLS["Damped Least-Squares (DLS)\nNumerical IK Solver (3x6 Jacobian)"]
-        ArcPlanner["Collision-Avoidance Arc Planner\n(Clearance Altitude z = 0.38m)"]
-        TFManager["Dynamic Spatial Reparenting\n(base_link -> tool0 -> base_link)"]
+    subgraph MotionPlanner ["4. Kinematics & Motion Control (vla_motion_planning)"]
+        TrajNode["vla_trajectory_executor<br/>(trajectory_executor_node.py)"]
+        DLS["Damped Least-Squares Numerical IK Solver<br/>3x6 Jacobian Formulation"]
+        ArcPlanner["Collision-Avoidance Arc Planner<br/>Clearance Altitude z = 0.38m"]
+        TFManager["Dynamic Spatial Reparenting<br/>base_link to tool0 to base_link"]
         TickLoop["50 Hz Real-Time Interpolator"]
         TrajNode --> DLS
         TrajNode --> ArcPlanner
@@ -43,18 +43,17 @@ flowchart TD
         TrajNode --> TickLoop
     end
 
-    subgraph Visualization["5. Digital Twin & Visualization (vla_description & RViz2)"]
-        RSP["robot_state_publisher\n(URDF & Mesh Kinematics)"]
-        RViz["RViz2 Studio Viewport\n(Light Studio Theme: 215, 220, 228)"]
+    subgraph Visualization ["5. Digital Twin & Visualization (vla_description & RViz2)"]
+        RSP["robot_state_publisher<br/>URDF & Mesh Kinematics"]
+        RViz["RViz2 Studio Viewport<br/>Light Studio Theme: 215, 220, 228"]
     end
 
-    %% Data Flow
     CLI -->|/vla/instruction| LangNode
     Catalog -->|/vla/detected_objects| LangNode
     Grounding -->|/vla/task_dispatch| TrajNode
-    TickLoop -->|/joint_states (50 Hz)| RSP
+    TickLoop -->|/joint_states @ 50Hz| RSP
     RSP -->|/tf & /robot_description| RViz
-    TrajNode -->|/vla/markers (50 Hz)| RViz
+    TrajNode -->|/vla/markers @ 50Hz| RViz
 ```
 
 ---
