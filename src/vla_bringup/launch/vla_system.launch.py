@@ -28,19 +28,31 @@ def generate_launch_description():
             output='screen',
             arguments=['-d', rviz_file]
         ),
-        # 3. Perception Node (Streams Boxes, Obstacle, Platform)
+        # 3. Overhead RGB-D Perception Camera Stream Node (Zero hardcoded coordinates)
+        Node(
+            package='vla_perception',
+            executable='camera_stream_node',
+            output='screen'
+        ),
+        # 4. Octo-VLA End-to-End Neural Policy Node
+        Node(
+            package='vla_perception',
+            executable='vla_policy_node',
+            output='screen'
+        ),
+        # 5. Dynamic Camera-Driven Object Detector (Backward compatibility & Grounding)
         Node(
             package='vla_perception',
             executable='detector_node',
             output='screen'
         ),
-        # 4. Language Task Planner
+        # 6. Language Task Planner
         Node(
             package='vla_task_planner',
             executable='language_task_node',
             output='screen'
         ),
-        # 5. Collision-Aware Trajectory Controller
+        # 7. Collision-Aware Trajectory & Closed-Loop Action Executor
         Node(
             package='vla_motion_planning',
             executable='trajectory_executor_node',

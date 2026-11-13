@@ -13,12 +13,14 @@ setup(
     install_requires=['setuptools'],
     zip_safe=True,
     maintainer='Krishna Kumar',
-    maintainer_email='krishna@example.com',
-    description='Simulated 3D vision and object detection for VLA robot manipulation',
+    maintainer_email='cmkkcse@gmail.com',
+    description='ML-driven End-to-End VLA perception, camera observation streaming, and policy inference',
     license='Apache-2.0',
     entry_points={
         'console_scripts': [
             'detector_node = vla_perception.detector_node:main',
+            'camera_stream_node = vla_perception.camera_stream_node:main',
+            'vla_policy_node = vla_perception.vla_policy_node:main',
         ],
     },
 )

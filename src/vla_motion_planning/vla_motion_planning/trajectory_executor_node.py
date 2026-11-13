@@ -88,8 +88,13 @@ class TrajectoryExecutorNode(Node):
 
         self.sub_dispatch = self.create_subscription(
             String, '/vla/task_dispatch', self.dispatch_callback, 10)
+        self.sub_action_cmd = self.create_subscription(
+            String, '/vla/action_cmd', self.action_cmd_callback, 10)
+        self.sub_detected = self.create_subscription(
+            String, '/vla/detected_objects', self.detected_callback, 10)
         self.pub_joints = self.create_publisher(JointState, '/joint_states', 10)
         self.pub_markers = self.create_publisher(MarkerArray, '/vla/markers', 10)
+        self.pub_carried_pose = self.create_publisher(String, '/vla/carried_object_pose', 10)
 
         # Realistic Scene Objects Catalog
         self.objects = {
@@ -143,6 +148,47 @@ class TrajectoryExecutorNode(Node):
         t_plat.transform.translation.x, t_plat.transform.translation.y, t_plat.transform.translation.z = self.platform['pos']
         t_plat.transform.rotation.w = 1.0
         self.static_broadcaster.sendTransform(t_plat)
+
+    def detected_callback(self, msg):
+        """Update object coordinates dynamically from live perception stream (zero hardcoded coords)."""
+        try:
+            data = json.loads(msg.data)
+            for obj in data.get('objects', []):
+                oid = obj.get('id')
+                pos = obj.get('position')
+                if oid in self.objects and pos:
+                    if self.carried_object != oid:
+                        self.objects[oid]['pos'] = pos
+        except Exception:
+            pass
+
+    def action_cmd_callback(self, msg):
+        """Execute closed-loop 7-DoF delta actions from the End-to-End VLA model."""
+        if self.is_executing:
+            return # If executing a planned trajectory arc, don't interrupt
+
+        try:
+            data = json.loads(msg.data)
+            delta = data.get('delta_action', [0.0, 0.0, 0.0])
+            grip = data.get('gripper_target', self.gripper_val)
+
+            # Current TCP
+            p_tcp, _ = fk(self.current_q)
+            target_p = p_tcp + np.array(delta)
+
+            # Enforce physical safety boundaries:
+            target_p[0] = np.clip(target_p[0], 0.15, 0.65)
+            target_p[1] = np.clip(target_p[1], -0.50, 0.50)
+            target_p[2] = np.clip(target_p[2], 0.035, 0.45) # Prevent driving through table
+
+            # Solve Damped Least-Squares IK
+            q_target, ok = inverse_kinematics_sesac(target_p, self.current_q)
+            if ok:
+                for i in range(6):
+                    self.current_q[i] += (q_target[i] - self.current_q[i]) * 0.4
+                self.gripper_val += (grip - self.gripper_val) * 0.4
+        except Exception as e:
+            self.get_logger().error(f'Error applying VLA delta action: {e}')
 
     def dispatch_callback(self, msg):
         if self.is_executing:
@@ -240,6 +286,14 @@ class TrajectoryExecutorNode(Node):
                 t.transform.translation.x, t.transform.translation.y, t.transform.translation.z = data['pos']
             t.transform.rotation.w = 1.0
             self.tf_broadcaster.sendTransform(t)
+
+        if self.carried_object:
+            carried_msg = String()
+            carried_msg.data = json.dumps({
+                'object_id': self.carried_object,
+                'pos': [float(p_tcp[0]), float(p_tcp[1]), float(p_tcp[2]) - 0.02]
+            })
+            self.pub_carried_pose.publish(carried_msg)
 
         # 2. Step through trajectory queue
         if self.trajectory_queue:

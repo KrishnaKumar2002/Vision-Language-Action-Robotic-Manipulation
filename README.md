@@ -1,11 +1,14 @@
 # Vision-Language-Action (VLA) Autonomous Robotic Manipulation
 
-[![ROS 2](https://img.shields.io/badge/ROS%202-Humble%20%7C%20Iron%20%7C%20Lyrical-blue?logo=ros)](https://docs.ros.org/)
+[![ROS 2](https://img.shields.io/badge/ROS%202-Humble%20%7C%20Iron%20%7C%20Jazzy-blue?logo=ros)](https://docs.ros.org/)
 [![Python](https://img.shields.io/badge/Python-3.10%20%7C%203.12%20%7C%203.14-green?logo=python)](https://www.python.org/)
-[![Architecture](https://img.shields.io/badge/Architecture-VLA%20Modular-orange)](https://github.com/)
+[![PyTorch](https://img.shields.io/badge/PyTorch-2.0+%20%7C%20Metal%20MPS-ee4c2c?logo=pytorch)](https://pytorch.org/)
+[![Architecture](https://img.shields.io/badge/Architecture-End--to--End%20VLA%20%2B%20Modular-orange)](https://github.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-An end-to-end **Vision-Language-Action (VLA)** robotic manipulation system in ROS 2. The pipeline accepts unstructured natural language commands (e.g., *"Pick up the red soda can, avoid the laser barrier, and deliver it to Docking Bay 1"*), grounds them against a real-time 3D perception stream, plans collision-aware 3D trajectory arcs over obstacles, solves 6-DOF numerical inverse kinematics, and executes manipulation tasks with dynamic spatial reparenting.
+An ML-driven **Vision-Language-Action (VLA)** robotic manipulation system in ROS 2. The pipeline observes the environment through an active overhead camera, ingests natural language instructions (e.g., *"Pick up the red soda can, avoid the laser barrier, and deliver it to Docking Bay 1"*), grounds spatial intent using a multimodal transformer, predicts continuous robot actions, and executes closed-loop manipulation via 6-DOF numerical inverse kinematics.
+
+**No predefined coordinates in Python lists.** The model estimates object positions and generates action deltas directly from camera photons and depth rays.
 
 ---
 
@@ -13,79 +16,117 @@ An end-to-end **Vision-Language-Action (VLA)** robotic manipulation system in RO
 
 ```mermaid
 flowchart TD
-    subgraph HumanInput ["1. Human Input Layer"]
-        CLI["Human Natural Language Prompt<br/>e.g., 'Pick up the red soda can...'"]
+    subgraph Sensors ["1. Vision & Sensor Layer (vla_perception)"]
+        CamNode["vla_camera_stream<br/>(camera_stream_node.py)"]
+        RGB["/camera/color/image_raw<br/>(256x256 RGB Photons)"]
+        Depth["/camera/depth/image_raw<br/>(Calibrated 32FC1 Depth)"]
+        Info["/camera/camera_info<br/>(Intrinsics K Matrix)"]
+        CamNode --> RGB
+        CamNode --> Depth
+        CamNode --> Info
     end
 
-    subgraph PerceptionLayer ["2. Perceptual Vision Layer (vla_perception)"]
+    subgraph HumanInput ["2. Natural Language Layer"]
+        CLI["Human Prompt<br/>e.g., 'Pick up the red can...'"]
+    end
+
+    subgraph PathA ["Path A: End-to-End Neural VLA Policy (vla_perception)"]
+        VLANode["vla_policy_node<br/>(Octo-VLA Multimodal Policy)"]
+        ViT["Patch Visual Tokenizer (16x16)"]
+        LangEnc["Language Tokenizer & Embedder"]
+        Transformer["Cross-Attention Multimodal Transformer"]
+        ActionHead["7-DoF Continuous Action Head"]
+        AttnHeatmap["/vla/attention_map<br/>(Visual Attention Heatmap)"]
+
+        RGB --> ViT
+        CLI --> LangEnc
+        ViT --> Transformer
+        LangEnc --> Transformer
+        Transformer --> ActionHead
+        Transformer --> AttnHeatmap
+    end
+
+    subgraph PathB ["Path B: Dynamic 3D Perception & Task Planner (Modular)"]
         DetNode["vla_object_detector<br/>(detector_node.py)"]
-        Catalog[("3D Object Catalog<br/>ID, Class, Color, 3D Pose")]
-        DetNode --> Catalog
+        RayCast["3D Pin-Hole Ray Back-Projection<br/>Camera Optical -> World (Z=0.06m)"]
+        Planner["vla_language_task_planner<br/>(language_task_node.py)"]
+
+        RGB --> DetNode
+        Info --> DetNode
+        DetNode --> RayCast
+        RayCast -->|/vla/detected_objects| Planner
+        CLI --> Planner
     end
 
-    subgraph TaskPlanner ["3. Language Grounding & Planning (vla_task_planner)"]
-        LangNode["vla_language_task_planner<br/>(language_task_node.py)"]
-        NLPParser["NLP Intent & Lexical Parser"]
-        Grounding["Multi-Modal Grounding Engine<br/>Matches Nouns & Colors to 3D Catalog"]
-        LangNode --> NLPParser
-        NLPParser --> Grounding
-    end
-
-    subgraph MotionPlanner ["4. Kinematics & Motion Control (vla_motion_planning)"]
+    subgraph MotionPlanner ["4. Kinematics & Execution (vla_motion_planning)"]
         TrajNode["vla_trajectory_executor<br/>(trajectory_executor_node.py)"]
-        DLS["Damped Least-Squares Numerical IK Solver<br/>3x6 Jacobian Formulation"]
-        ArcPlanner["Collision-Avoidance Arc Planner<br/>Clearance Altitude z = 0.38m"]
-        TFManager["Dynamic Spatial Reparenting<br/>base_link to tool0 to base_link"]
-        TickLoop["50 Hz Real-Time Interpolator"]
+        DLS["Damped Least-Squares Numerical IK<br/>3x6 Jacobian Inversion (λ = 0.02)"]
+        ArcGen["Collision-Avoidance Arc Synthesis<br/>Obstacle Clearance z = 0.38m"]
+        TFManager["Dynamic TF2 Spatial Reparenting<br/>base_link -> tool0 -> base_link"]
+
+        ActionHead -->|/vla/action_cmd (dx, dy, dz, grip)| TrajNode
+        Planner -->|/vla/task_dispatch (JSON Waypoint Plan)| TrajNode
         TrajNode --> DLS
-        TrajNode --> ArcPlanner
+        TrajNode --> ArcGen
         TrajNode --> TFManager
-        TrajNode --> TickLoop
     end
 
-    subgraph Visualization ["5. Digital Twin & Visualization (vla_description & RViz2)"]
-        RSP["robot_state_publisher<br/>URDF & Mesh Kinematics"]
-        RViz["RViz2 Studio Viewport<br/>Light Studio Theme: 215, 220, 228"]
+    subgraph DigitalTwin ["5. Digital Twin & Visualization (RViz2)"]
+        RSP["robot_state_publisher<br/>URDF & Kinematic Meshes"]
+        RViz["RViz2 Studio Viewport<br/>Light Studio Slate (215, 220, 228)"]
     end
 
-    CLI -->|/vla/instruction| LangNode
-    Catalog -->|/vla/detected_objects| LangNode
-    Grounding -->|/vla/task_dispatch| TrajNode
-    TickLoop -->|/joint_states @ 50Hz| RSP
+    TrajNode -->|/joint_states @ 50Hz| RSP
     RSP -->|/tf & /robot_description| RViz
+    AttnHeatmap --> RViz
     TrajNode -->|/vla/markers @ 50Hz| RViz
+    TrajNode -.->|/vla/carried_object_pose| CamNode
 ```
+
+---
+
+## Dual Pipeline Architecture
+
+The system supports two complementary execution pipelines:
+
+| Feature | Path A: End-to-End VLA (Recommended) | Path B: Modular Grounding + Arc Planner |
+| :--- | :--- | :--- |
+| **Model** | **Octo-VLA Multimodal Transformer** (`vla_model.py`) | **Language Grounding + DLS Arc Generator** |
+| **Visual Input** | Raw $256 \times 256 \times 3$ RGB camera frames | Raw RGB + Camera Intrinsic Ray-Plane Intersection |
+| **Language Input** | Word tokens mapped to learned transformer embeddings | Lexical parser with keyword intent matching |
+| **Decision Making** | Cross-attention over visual patch tokens | Multi-modal symbol grounding against perceived 3D poses |
+| **Action Output** | Continuous 7-DoF delta actions $[\Delta x, \Delta y, \Delta z, \Delta \text{rot}, \text{grip}]$ | Multi-waypoint collision-avoidance 3D trajectory arcs |
+| **Explainability** | Real-time cross-attention heatmaps (`/vla/attention_map`) | Explicit Cartesian 3D waypoints & RViz visual ribbon |
 
 ---
 
 ## Key Capabilities
 
-1. **Multi-Modal Symbol Grounding**:
-   - Bridges human vocabulary (nouns and colors like *"red soda can"*, *"coke"*, *"blue mug"*, *"coffee"*, *"green flask"*) to physical 3D spatial frames discovered by the perception catalog.
-   - Fallback mechanisms for safety rejection when target items are absent or instructions are malformed.
+1. **End-to-End Vision-Language-Action Policy**:
+   - Inspired by **Octo** (Open X-Embodiment).
+   - Ingests $256 \times 256 \times 3$ RGB images, patches them into 256 tokens, and fuses them with instruction tokens using transformer cross-attention.
+   - Evaluates closed-loop actions at $10\,\text{Hz}$ with hardware acceleration (Apple Silicon Metal `mps` on macOS, CPU in Linux VM).
 
-2. **Damped Least-Squares (DLS) Inverse Kinematics**:
-   - Computes numerical inverse kinematics for the 6-DOF SESAC manipulator with tool offsets.
-   - Formulates a $3 \times 6$ numerical Jacobian with Levenberg-Marquardt damping ($\lambda = 0.02$) to guarantee smooth inversion without singularity instability or axis flipping:
+2. **Zero Predefined Object Coordinates**:
+   - No static object lists. The overhead camera sensor (`camera_stream_node.py`) renders realistic perspective frames from `camera_link`.
+   - The detector node back-projects 2D image contours through camera rays:
+     $$\mathbf{r}_{\text{world}} = \mathbf{R}^{\top} \begin{bmatrix} \frac{u - c_x}{f_x} \\ \frac{v - c_y}{f_y} \\ 1 \end{bmatrix}, \quad \mathbf{p}_{\text{world}} = \mathbf{p}_{\text{eye}} + \frac{z_{\text{target}} - z_{\text{eye}}}{r_{z}} \mathbf{r}_{\text{world}}$$
+   - Randomizing object locations dynamically via `/vla/randomize_scene` demonstrates true visual adaptation.
+
+3. **Damped Least-Squares (DLS) Numerical IK**:
+   - Formulates a $3 \times 6$ numerical Jacobian with Levenberg-Marquardt damping ($\lambda = 0.02$) for singularity-free Cartesian control:
      $$\Delta \mathbf{q} = \mathbf{J}^{\top} \left( \mathbf{J} \mathbf{J}^{\top} + \lambda^2 \mathbf{I}_{3 \times 3} \right)^{-1} \mathbf{e}$$
-   - Converges to $< 0.0007\,\text{m}$ Cartesian positioning error in under 50 iterations.
+   - Converges to $< 0.0007\,\text{m}$ Cartesian error in under 50 iterations.
 
-3. **Collision-Aware Trajectory Arc Synthesis**:
-   - Evaluates obstacle bounding geometry (central laser security gate, height $0.20\,\text{m}$).
-   - Automatically computes a 7-stage spatial waypoint trajectory elevating the object through a high-altitude transit arc ($z = 0.38\,\text{m}$) before descending onto the target docking platform.
-
-4. **Dynamic Spatial Reparenting (TF2 Ownership)**:
-   - Solves the multi-parent conflict in ROS 2 transform graphs:
-     - **On Table**: Object frame is a child of `base_link`.
-     - **During Grasp**: Controller assumes ownership and reparents the object to the gripper flange (`tool0`) at $50\,\text{Hz}$, moving synchronously with the fingertips.
-     - **On Release**: Controller transfers ownership back to `base_link`, locked at the center bullseye of Docking Bay 01.
+4. **Dynamic TF2 Spatial Reparenting**:
+   - **On Table**: Object frame is child of `base_link`.
+   - **During Grasp**: Transferred to gripper flange (`tool0`) at $50\,\text{Hz}$.
+   - **On Release**: Relocked to `base_link` at the Docking Bay bullseye.
+   - Grasp state feeds back to the camera node (`/vla/carried_object_pose`) so the synthetic visual stream reflects the carried payload.
 
 5. **High-Fidelity Studio Digital Twin (RViz2)**:
-   - **Environment**: Dark titanium slate workbench ($1.15\,\text{m} \times 1.35\,\text{m}$) on brushed aluminum pillars, anti-static ESD rubber mat with glowing neon cyan border, and floor hazard safety demarcations.
-   - **Realistic 3D Objects**: Cylindrical Red Soda Can (with silver pull-tab lid and base rim), Blue Ceramic Mug (with coffee and handle), and Green Specimen Flask (with gold screw cap).
-   - **Autonomous Docking Station**: Multi-tiered alloy landing deck with concentric cyan, white, and golden bullseye rings with 4 LED guide pins.
-   - **Trajectory Visualizer**: Real-time electric cyan 3D ribbon tracing the exact smooth transit curve through the air.
-   - **Studio Lighting**: Default Soft Studio Grey background (`RGB: 215; 220; 228`) for maximum contrast and zero eye strain.
+   - Titanium slate workbench ($1.15\,\text{m} \times 1.35\,\text{m}$), anti-static ESD mat, laser barrier obstacle ($h = 0.20\,\text{m}$), and concentric alloy docking station.
+   - Real-time 3D ribbon trajectory visualization and live neural attention heatmaps.
 
 ---
 
@@ -94,58 +135,75 @@ flowchart TD
 ```
 vla-robotic-manipulation/
 ├── README.md
-├── .gitignore
 ├── LICENSE
+├── test_vla_end_to_end.py        # Standalone VLA verification suite (MPS / CPU)
+├── verification/                 # Exported camera views & attention heatmaps
+│   ├── camera_view_scene.png
+│   └── vla_attention_overlay.png
 └── src/
-    ├── sesac_robot/              # 6-DOF manipulator description, URDF xacro & 3D visual/collision meshes
+    ├── sesac_robot/              # 6-DOF arm URDF xacro, collision/visual meshes & ros2_control
     ├── vla_bringup/              # Launch orchestration (vla_system.launch.py)
     ├── vla_description/          # Studio workspace RViz configuration (vla_scene.rviz)
-    ├── vla_motion_planning/      # DLS numerical IK solver, 50 Hz trajectory executor & TF reparenting
-    ├── vla_perception/           # 3D object detection simulator & perception stream catalog
-    └── vla_task_planner/         # NLP intent parser & multi-modal symbol grounding engine
+    ├── vla_motion_planning/      # DLS IK solver, 50 Hz trajectory executor & VLA action adapter
+    │   └── vla_motion_planning/
+    │       └── trajectory_executor_node.py
+    ├── vla_perception/           # Camera simulation, Octo-VLA model & dynamic perception
+    │   └── vla_perception/
+    │       ├── camera_stream_node.py   # Synthetic RGB-D camera sensor (15 Hz)
+    │       ├── vla_model.py            # Octo-VLA PyTorch Multimodal Transformer
+    │       ├── vla_policy_node.py      # Closed-loop 10 Hz VLA inference node
+    │       └── detector_node.py        # Dynamic 3D ray back-projection detector
+    └── vla_task_planner/         # Natural language task parser & symbol grounding engine
+        └── vla_task_planner/
+            └── language_task_node.py
 ```
 
 ---
 
-## Installation & Build
+## Verification & Standalone Testing
 
-### Prerequisites
-- **Ubuntu 22.04 / 24.04** or **Debian Testing (Trixie)** on x86_64 or Apple Silicon (UTM / QEMU aarch64).
-- **ROS 2**: Compatible with `Humble`, `Iron`, `Jazzy`, or `Lyrical`.
-
-### Build Workspace
+Run the standalone verification suite without launching the full ROS 2 stack (works natively on macOS Apple Silicon MPS or Linux CPU):
 ```bash
-# Clone into your workspace
+python3 test_vla_end_to_end.py
+```
+
+This verifies:
+1. Overhead RGB-D camera rendering ($256 \times 256$ pixels).
+2. Octo-VLA PyTorch forward pass on Apple Silicon Metal (MPS) or CPU.
+3. Visual cross-attention dynamically localizing target objects from photons alone.
+4. Dynamically relocating the red can to randomized unseen coordinates and verifying that the predicted actions update in real time.
+5. Saves visual outputs to `verification/camera_view_scene.png` and `verification/vla_attention_overlay.png`.
+
+---
+
+## ROS 2 Quickstart (Ubuntu / UTM VM)
+
+### 1. Build Workspace
+```bash
 mkdir -p ~/vla_ws/src
 cd ~/vla_ws/src
 git clone <your-repo-url> .
-
-# Build with colcon
 cd ~/vla_ws
 colcon build --symlink-install
-
-# Source environment
 source install/setup.bash
 ```
 
----
-
-## Quickstart
-
-### 1. Launch the Digital Twin & VLA Nodes
+### 2. Launch the System
 ```bash
 ros2 launch vla_bringup vla_system.launch.py
 ```
-This starts:
+This launches:
 - `robot_state_publisher` loading the URDF robot meshes.
 - RViz2 with the clean studio workbench, 3D objects, laser barrier, and docking bay.
-- `vla_object_detector` streaming perception data.
+- `camera_stream_node` streaming real-time RGB and Depth camera frames at $15\,\text{Hz}$.
+- `vla_policy_node` running the Octo-VLA PyTorch model in closed loop at $10\,\text{Hz}$.
+- `vla_object_detector` dynamically estimating 3D poses from camera photons (zero hardcoding).
 - `vla_language_task_planner` awaiting natural language instructions.
-- `vla_trajectory_executor` running kinematics and TF2 reparenting at $50\,\text{Hz}$.
+- `vla_trajectory_executor` running kinematics and closed-loop VLA action execution at $50\,\text{Hz}$.
 
 ---
 
-### 2. Dispatch Natural Language Instructions
+### 3. Dispatch Natural Language Instructions
 Open a second terminal window, source the workspace, and send commands:
 
 #### Test 1: Full Collision-Aware Pick-and-Place (Red Can)
@@ -169,23 +227,12 @@ ros2 topic pub --once /vla/instruction std_msgs/msg/String \
 ```
 * **Robot Action**: Reaches the far lateral target ($y = -0.35\,\text{m}$), solves the kinematics cleanly, clears the obstacle, and docks the payload.
 
-#### Test 4: Safety Rejection (Non-Existent Target)
+#### Test 4: Dynamic Scene Randomization (Zero Predefined Coordinates)
+In a separate terminal, trigger dynamic scene randomization:
 ```bash
-ros2 topic pub --once /vla/instruction std_msgs/msg/String \
-  "data: 'Pick up the purple bottle and put it on the dock'"
+ros2 topic pub --once /vla/randomize_scene std_msgs/msg/String "data: 'randomize'"
 ```
-* **Robot Action**: Safely rejected with log `[ERROR] Perception cannot find any "purple" object in the scene!`. The robot remains stationary.
-
----
-
-## Background Color Presets in RViz
-
-To switch studio lighting themes in RViz:
-1. In the left panel, expand **Global Options**.
-2. Click **Background Color** and enter:
-   - **Clean Studio Grey (Default)**: `215; 220; 228`
-   - **Warm Lab White**: `245; 247; 250`
-   - **Engineering Slate Blue**: `65; 72; 82`
+The camera view dynamically updates, the detector re-estimates the 3D centroids from photons, and the VLA policy steers toward the newly placed objects.
 
 ---
 

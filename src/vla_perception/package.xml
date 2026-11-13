@@ -2,11 +2,12 @@
 <package format="3">
   <name>vla_perception</name>
   <version>1.0.0</version>
-  <description>Simulated 3D vision and object detection for VLA robot manipulation</description>
-  <maintainer email="krishna@example.com">Krishna Kumar</maintainer>
+  <description>ML-driven End-to-End VLA perception, camera observation streaming, and policy inference</description>
+  <maintainer email="cmkkcse@gmail.com">Krishna Kumar</maintainer>
   <license>Apache-2.0</license>
   <depend>rclpy</depend>
   <depend>std_msgs</depend>
+  <depend>sensor_msgs</depend>
   <depend>geometry_msgs</depend>
   <depend>visualization_msgs</depend>
   <depend>tf2_ros</depend>
