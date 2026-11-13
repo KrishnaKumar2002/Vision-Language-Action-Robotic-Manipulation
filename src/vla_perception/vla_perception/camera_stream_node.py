@@ -224,7 +224,7 @@ class CameraStreamNode(Node):
                 rgb,
                 (u_b - w_pix // 2, v_b - h_pix // 2),
                 (u_b + w_pix // 2, v_b + h_pix // 2),
-                (30, 30, 240), # Glowing red laser barrier
+                (20, 140, 255), # Glowing amber laser barrier (matches RViz, excludes red detector)
                 -1
             )
             cv2.rectangle(

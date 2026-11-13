@@ -146,6 +146,8 @@ class TrajectoryExecutorNode(Node):
         self.planned_path_points = []
         self.delivered_payload = None
         self.delivered_objects = set()
+        self.pending_tasks_queue = []
+        self.current_trajectory_color = (0.0, 0.75, 0.95, 0.90)
 
         self.timer = self.create_timer(0.02, self.control_tick) # 50 Hz control loop
         self.get_logger().info('VLA Trajectory Executor & Dynamic Object Reparenting online.')
@@ -206,40 +208,44 @@ class TrajectoryExecutorNode(Node):
             self.get_logger().error(f'Error applying VLA delta action: {e}')
 
     def dispatch_callback(self, msg):
-        if self.is_executing:
-            self.get_logger().warning('Currently executing another trajectory. Ignoring new dispatch.')
-            return
-
         try:
             plan = json.loads(msg.data)
-            target_frame = plan['target_frame']
-            dest_frame = plan['destination_frame']
-            avoid_obs = plan.get('avoid_obstacle', True)
-
-            if target_frame in self.delivered_objects:
-                self.delivered_objects.remove(target_frame)
-
-            try:
-                t_obj = self.tf_buffer.lookup_transform('base_link', target_frame, rclpy.time.Time())
-                p_src = np.array([t_obj.transform.translation.x, t_obj.transform.translation.y, t_obj.transform.translation.z])
-            except Exception:
-                p_src = np.array(self.objects[target_frame]['pos'])
-
-            # Resolve Dedicated Non-Overlapping Target Slot for this payload
-            p_dst = np.array(self.docking_slots.get(target_frame, self.platform['pos']))
-
-            self.get_logger().info(f'Planning Collision-Aware Trajectory from {p_src} to {p_dst} (Obstacle Avoidance={avoid_obs})...')
-            self.build_collision_aware_trajectory(p_src, p_dst, target_frame, avoid_obs)
-            self.is_executing = True
-
+            if self.is_executing:
+                self.pending_tasks_queue.append(plan)
+                self.get_logger().info(
+                    f'>>> TASK QUEUED: [{plan.get("target_name", "Object")}] added to pending queue. '
+                    f'Total queued: {len(self.pending_tasks_queue)}'
+                )
+                return
+            self.execute_plan(plan)
         except Exception as e:
-            self.get_logger().error(f'Failed resolving TF target poses: {e}')
+            self.get_logger().error(f'Failed parsing task dispatch: {e}')
+
+    def execute_plan(self, plan):
+        target_frame = plan['target_frame']
+        dest_frame = plan['destination_frame']
+        avoid_obs = plan.get('avoid_obstacle', True)
+
+        if target_frame in self.delivered_objects:
+            self.delivered_objects.remove(target_frame)
+
+        try:
+            t_obj = self.tf_buffer.lookup_transform('base_link', target_frame, rclpy.time.Time())
+            p_src = np.array([t_obj.transform.translation.x, t_obj.transform.translation.y, t_obj.transform.translation.z])
+        except Exception:
+            p_src = np.array(self.objects[target_frame]['pos'])
+
+        # Resolve Dedicated Non-Overlapping Target Slot for this payload
+        p_dst = np.array(self.docking_slots.get(target_frame, self.platform['pos']))
+
+        self.get_logger().info(f'Planning Collision-Aware Trajectory for {target_frame} from {p_src} to {p_dst} (Obstacle Avoidance={avoid_obs})...')
+        self.build_collision_aware_trajectory(p_src, p_dst, target_frame, avoid_obs)
+        self.is_executing = True
 
     def build_collision_aware_trajectory(self, p_src, p_dst, obj_name, avoid_obs):
         self.trajectory_queue.clear()
         self.planned_path_points.clear()
         hover_z = 0.18
-        high_corridor_z = 0.44
 
         p_src_hover = p_src + np.array([0, 0, hover_z])
         p_dst_hover = p_dst + np.array([0, 0, hover_z])
@@ -256,39 +262,44 @@ class TrajectoryExecutorNode(Node):
         self.trajectory_queue.append(('ATTACH', obj_name, 0.1))
         self.add_cartesian_segment(p_src_hover, gripper=0.015, duration=1.2)
 
-        # 2. Strict Collision Avoidance Transit: High Bridge Corridor
-        if avoid_obs:
-            # Check if trajectory intersects the obstacle barrier corridor (Y in [-0.08, 0.18])
-            y_start, y_end = p_src[1], p_dst[1]
-            if (y_start < 0.05 < y_end) or (y_end < 0.05 < y_start):
-                # 3-point high clearance plateau bridge over the barrier
-                # 2.1 Climb up before reaching the obstacle zone
-                wp_climb = np.array([p_src[0], -0.12 if y_start < y_end else 0.22, high_corridor_z])
-                self.planned_path_points.append(list(wp_climb))
-                self.add_cartesian_segment(wp_climb, gripper=0.015, duration=1.8)
+        # 2. Unique, Specialized Trajectory Profiles per Object
+        if obj_name == 'blue_box':
+            # Profile 1 (Blue Mug): Flank Bypass Sweep around obstacle perimeter
+            self.current_trajectory_color = (0.15, 0.55, 1.0, 0.95) # Royal Azure
+            wp_flank1 = np.array([0.48, 0.00, 0.32])
+            wp_flank2 = np.array([0.48, 0.15, 0.32])
+            self.planned_path_points.append(list(wp_flank1))
+            self.add_cartesian_segment(wp_flank1, gripper=0.015, duration=1.8)
+            self.planned_path_points.append(list(wp_flank2))
+            self.add_cartesian_segment(wp_flank2, gripper=0.015, duration=1.8)
 
-                # 2.2 Cruise horizontally directly over the obstacle with generous vertical clearance (>22cm)
-                wp_cross = np.array([0.40, 0.05, high_corridor_z])
-                self.planned_path_points.append(list(wp_cross))
-                self.add_cartesian_segment(wp_cross, gripper=0.015, duration=1.5)
+        elif obj_name == 'green_box':
+            # Profile 2 (Green Flask): Long-Span Trans-Workspace High Arch
+            self.current_trajectory_color = (0.15, 0.95, 0.35, 0.95) # Neon Emerald
+            wp_arch1 = np.array([0.35, -0.18, 0.46])
+            wp_apex = np.array([0.36, 0.05, 0.46])
+            wp_arch2 = np.array([0.35, 0.24, 0.46])
+            for wp in [wp_arch1, wp_apex, wp_arch2]:
+                self.planned_path_points.append(list(wp))
+                self.add_cartesian_segment(wp, gripper=0.015, duration=1.5)
 
-                # 2.3 Maintain altitude until completely past the obstacle boundary
-                wp_clear = np.array([p_dst[0], 0.22 if y_start < y_end else -0.12, high_corridor_z])
-                self.planned_path_points.append(list(wp_clear))
-                self.add_cartesian_segment(wp_clear, gripper=0.015, duration=1.8)
-            else:
-                # Midpoint clearance arc for non-crossing movements
-                midpoint = (p_src_hover + p_dst_hover) / 2.0
-                midpoint[2] = high_corridor_z
-                self.planned_path_points.append(list(midpoint))
-                self.add_cartesian_segment(midpoint, gripper=0.015, duration=2.2)
+        else:
+            # Profile 3 (Red Can / Default): Strict High Bridge Plateau
+            self.current_trajectory_color = (0.95, 0.15, 0.15, 0.95) # Vibrant Crimson
+            high_corridor_z = 0.44
+            wp_climb = np.array([p_src[0], -0.12, high_corridor_z])
+            wp_cross = np.array([0.38, 0.05, high_corridor_z])
+            wp_clear = np.array([p_dst[0], 0.20, high_corridor_z])
+            for wp in [wp_climb, wp_cross, wp_clear]:
+                self.planned_path_points.append(list(wp))
+                self.add_cartesian_segment(wp, gripper=0.015, duration=1.5)
 
         self.planned_path_points.append(list(p_dst_hover))
         self.planned_path_points.append(list(p_dst + np.array([0, 0, 0.05])))
         self.planned_path_points.append(list(p_dst_hover))
 
         # 3. Transfer to Destination and Place
-        self.add_cartesian_segment(p_dst_hover, gripper=0.015, duration=2.0)
+        self.add_cartesian_segment(p_dst_hover, gripper=0.015, duration=1.8)
         self.add_cartesian_segment(p_dst + np.array([0, 0, 0.05]), gripper=0.015, duration=1.5)
         self.trajectory_queue.append(('DETACH', obj_name, 0.1))
         self.trajectory_queue.append(('GRIP', 0.035, 0.8)) # Open gripper
@@ -381,6 +392,14 @@ class TrajectoryExecutorNode(Node):
             if self.is_executing:
                 self.is_executing = False
                 self.get_logger().info('>>> VLA Pick-and-Place Task completed successfully!')
+                # Dispatch next task from queue automatically
+                if self.pending_tasks_queue:
+                    next_plan = self.pending_tasks_queue.pop(0)
+                    self.get_logger().info(
+                        f'>>> Executing Next Queued Task: [{next_plan.get("target_name")}] '
+                        f'({len(self.pending_tasks_queue)} remaining in queue)'
+                    )
+                    self.execute_plan(next_plan)
 
         # 3. Publish Robot Joint States
         js = JointState()
@@ -512,7 +531,7 @@ class TrajectoryExecutorNode(Node):
         m_dock_base.color.r, m_dock_base.color.g, m_dock_base.color.b, m_dock_base.color.a = (0.28, 0.32, 0.38, 1.0)
         markers.markers.append(m_dock_base)
 
-        # 2. Outer Glowing Cyan Target Ring
+        # 2. Outer Glowing Cyan Target Perimeter
         m_dock_ring1 = Marker()
         m_dock_ring1.header.stamp = stamp
         m_dock_ring1.header.frame_id = 'base_link'
@@ -523,34 +542,19 @@ class TrajectoryExecutorNode(Node):
         m_dock_ring1.pose.position.x, m_dock_ring1.pose.position.y = dx, dy
         m_dock_ring1.pose.position.z = 0.017
         m_dock_ring1.pose.orientation.w = 1.0
-        m_dock_ring1.scale.x = m_dock_ring1.scale.y = 0.21
+        m_dock_ring1.scale.x = m_dock_ring1.scale.y = 0.24
         m_dock_ring1.scale.z = 0.003
         m_dock_ring1.color.r, m_dock_ring1.color.g, m_dock_ring1.color.b, m_dock_ring1.color.a = (0.0, 0.75, 0.95, 0.90)
         markers.markers.append(m_dock_ring1)
 
-        # 3. Middle White Alignment Ring
-        m_dock_ring2 = Marker()
-        m_dock_ring2.header.stamp = stamp
-        m_dock_ring2.header.frame_id = 'base_link'
-        m_dock_ring2.ns = 'dock'
-        m_dock_ring2.id = 22
-        m_dock_ring2.type = Marker.CYLINDER
-        m_dock_ring2.action = Marker.ADD
-        m_dock_ring2.pose.position.x, m_dock_ring2.pose.position.y = dx, dy
-        m_dock_ring2.pose.position.z = 0.018
-        m_dock_ring2.pose.orientation.w = 1.0
-        m_dock_ring2.scale.x = m_dock_ring2.scale.y = 0.13
-        m_dock_ring2.scale.z = 0.003
-        m_dock_ring2.color.r, m_dock_ring2.color.g, m_dock_ring2.color.b, m_dock_ring2.color.a = (0.95, 0.95, 0.98, 0.95)
-        markers.markers.append(m_dock_ring2)
-
-        # 4. Multi-Bay Staging Pads (Bay 01A - Red Can, Bay 01B - Blue Mug, Bay 01C - Green Flask)
+        # 3. Dedicated Multi-Bay Staging Landing Pads (Bay 01A - Red Can, Bay 01B - Blue Mug, Bay 01C - Green Flask)
         bay_pads = [
-            (30, 0.30, 0.25, (0.90, 0.25, 0.25, 0.85)), # Bay A (West: Can)
-            (31, 0.40, 0.25, (0.25, 0.55, 0.95, 0.85)), # Bay B (East: Mug)
-            (32, 0.35, 0.35, (0.25, 0.85, 0.45, 0.85)), # Bay C (North: Flask)
+            (30, 0.30, 0.25, (0.88, 0.15, 0.15, 0.90)), # Bay 01A (West: Soda Can)
+            (31, 0.40, 0.25, (0.15, 0.55, 0.95, 0.90)), # Bay 01B (East: Ceramic Mug)
+            (32, 0.35, 0.35, (0.15, 0.85, 0.35, 0.90)), # Bay 01C (North: Specimen Flask)
         ]
         for pad_id, px, py, p_col in bay_pads:
+            # Landing Pad Disk
             m_pad = Marker()
             m_pad.header.stamp = stamp
             m_pad.header.frame_id = 'base_link'
@@ -561,12 +565,12 @@ class TrajectoryExecutorNode(Node):
             m_pad.pose.position.x, m_pad.pose.position.y = px, py
             m_pad.pose.position.z = 0.019
             m_pad.pose.orientation.w = 1.0
-            m_pad.scale.x = m_pad.scale.y = 0.068
+            m_pad.scale.x = m_pad.scale.y = 0.080
             m_pad.scale.z = 0.003
             m_pad.color.r, m_pad.color.g, m_pad.color.b, m_pad.color.a = p_col
             markers.markers.append(m_pad)
 
-            # Central alignment target pin
+            # Golden Center Target Pin
             m_pin = Marker()
             m_pin.header.stamp = stamp
             m_pin.header.frame_id = 'base_link'
@@ -577,7 +581,7 @@ class TrajectoryExecutorNode(Node):
             m_pin.pose.position.x, m_pin.pose.position.y = px, py
             m_pin.pose.position.z = 0.021
             m_pin.pose.orientation.w = 1.0
-            m_pin.scale.x = m_pin.scale.y = 0.022
+            m_pin.scale.x = m_pin.scale.y = 0.024
             m_pin.scale.z = 0.004
             m_pin.color.r, m_pin.color.g, m_pin.color.b, m_pin.color.a = (1.0, 0.85, 0.15, 1.0)
             markers.markers.append(m_pin)
@@ -875,8 +879,8 @@ class TrajectoryExecutorNode(Node):
             m_path.id = 90
             m_path.type = Marker.LINE_STRIP
             m_path.action = Marker.ADD
-            m_path.scale.x = 0.008 # Ribbon thickness
-            m_path.color.r, m_path.color.g, m_path.color.b, m_path.color.a = (0.0, 0.75, 0.95, 0.90)
+            m_path.scale.x = 0.010 # Ribbon thickness
+            m_path.color.r, m_path.color.g, m_path.color.b, m_path.color.a = self.current_trajectory_color
             for wp in self.planned_path_points:
                 p = Point()
                 p.x, p.y, p.z = float(wp[0]), float(wp[1]), float(wp[2])
