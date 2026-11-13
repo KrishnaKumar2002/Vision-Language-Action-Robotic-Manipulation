@@ -99,26 +99,26 @@ The vision pipeline continuously tokenizes overhead camera observations ($256 \t
 ```mermaid
 flowchart TD
     subgraph Sensors ["1. Vision & Sensor Layer (vla_perception)"]
-        CamNode["vla_camera_stream<br/>(camera_stream_node.py)"]
-        RGB["/camera/color/image_raw<br/>(256x256 RGB Photons)"]
-        Depth["/camera/depth/image_raw<br/>(Calibrated 32FC1 Depth)"]
-        Info["/camera/camera_info<br/>(Intrinsics K Matrix)"]
+        CamNode["vla_camera_stream<br/>camera_stream_node.py"]
+        RGB["/camera/color/image_raw<br/>256x256 RGB Photons"]
+        Depth["/camera/depth/image_raw<br/>Calibrated 32FC1 Depth"]
+        Info["/camera/camera_info<br/>Intrinsics K Matrix"]
         CamNode --> RGB
         CamNode --> Depth
         CamNode --> Info
     end
 
     subgraph HumanInput ["2. Natural Language Layer"]
-        CLI["Human Natural Language Prompt<br/>e.g., 'Pick up the red can...'"]
+        CLI["Human Natural Language Prompt<br/>e.g. Pick up red can..."]
     end
 
     subgraph PathA ["Path A: End-to-End Neural VLA Policy (vla_perception)"]
-        VLANode["vla_policy_node<br/>(Octo-VLA Multimodal Policy)"]
-        ViT["Patch Visual Tokenizer (16x16)"]
+        VLANode["vla_policy_node<br/>Octo-VLA Multimodal Policy"]
+        ViT["Patch Visual Tokenizer 16x16"]
         LangEnc["Language Tokenizer & Embedder"]
         Transformer["Cross-Attention Multimodal Transformer"]
         ActionHead["7-DoF Continuous Action Head"]
-        AttnHeatmap["/vla/attention_map<br/>(Visual Attention Heatmap)"]
+        AttnHeatmap["/vla/attention_map<br/>Visual Attention Heatmap"]
 
         RGB --> ViT
         CLI --> LangEnc
@@ -129,9 +129,9 @@ flowchart TD
     end
 
     subgraph PathB ["Path B: Dynamic 3D Perception & Task Planner (Modular)"]
-        DetNode["vla_object_detector<br/>(detector_node.py)"]
-        RayCast["3D Pin-Hole Ray Back-Projection<br/>Camera Optical -> World (Z=0.06m)"]
-        Planner["vla_language_task_planner<br/>(language_task_node.py)"]
+        DetNode["vla_object_detector<br/>detector_node.py"]
+        RayCast["3D Pin-Hole Ray Back-Projection<br/>Camera Optical to World Z=0.06m"]
+        Planner["vla_language_task_planner<br/>language_task_node.py"]
 
         RGB --> DetNode
         Info --> DetNode
@@ -141,14 +141,14 @@ flowchart TD
     end
 
     subgraph MotionPlanner ["4. Kinematics & Execution (vla_motion_planning)"]
-        TrajNode["vla_trajectory_executor<br/>(trajectory_executor_node.py)"]
+        TrajNode["vla_trajectory_executor<br/>trajectory_executor_node.py"]
         TaskQ["FIFO Multi-Task Command Queue"]
-        DLS["Damped Least-Squares Numerical IK<br/>3x6 Jacobian Inversion (λ = 0.02)"]
-        MultiBay["Multi-Bay Staging Allocator<br/>Bay 01A, 01B, 01C"]
-        TFManager["Dynamic TF2 Spatial Reparenting<br/>base_link -> tool0 -> base_link"]
+        DLS["Damped Least-Squares Numerical IK<br/>3x6 Jacobian Inversion lambda=0.02"]
+        MultiBay["Multi-Bay Staging Allocator<br/>Bays 01A, 01B, 01C"]
+        TFManager["Dynamic TF2 Spatial Reparenting<br/>base_link to tool0 to base_link"]
 
-        ActionHead -->|/vla/action_cmd (dx, dy, dz, grip)| TrajNode
-        Planner -->|/vla/task_dispatch (JSON Plan)| TaskQ
+        ActionHead -->|/vla/action_cmd: dx, dy, dz, grip| TrajNode
+        Planner -->|/vla/task_dispatch: JSON Plan| TaskQ
         TaskQ --> TrajNode
         TrajNode --> DLS
         TrajNode --> MultiBay
@@ -157,13 +157,13 @@ flowchart TD
 
     subgraph DigitalTwin ["5. Digital Twin & Visualization (RViz2)"]
         RSP["robot_state_publisher<br/>URDF & Kinematic Meshes"]
-        RViz["RViz2 Studio Viewport<br/>Light Studio Slate (215, 220, 228)"]
+        RViz["RViz2 Studio Viewport<br/>Light Studio Slate"]
     end
 
-    TrajNode -->|/joint_states @ 50Hz| RSP
-    RSP -->|/tf & /robot_description| RViz
+    TrajNode -->|/joint_states at 50Hz| RSP
+    RSP -->|/tf and /robot_description| RViz
     AttnHeatmap --> RViz
-    TrajNode -->|/vla/markers @ 50Hz| RViz
+    TrajNode -->|/vla/markers at 50Hz| RViz
     TrajNode -.->|/vla/carried_object_pose| CamNode
 ```
 
