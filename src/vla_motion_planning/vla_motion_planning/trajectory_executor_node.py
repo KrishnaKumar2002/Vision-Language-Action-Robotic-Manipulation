@@ -234,8 +234,8 @@ class TrajectoryExecutorNode(Node):
     def build_collision_aware_trajectory(self, p_src, p_dst, obj_name, avoid_obs):
         self.trajectory_queue.clear()
         self.planned_path_points.clear()
-        hover_z = 0.16
-        obstacle_clearance_z = 0.38
+        hover_z = 0.18
+        high_corridor_z = 0.44
 
         p_src_hover = p_src + np.array([0, 0, hover_z])
         p_dst_hover = p_dst + np.array([0, 0, hover_z])
@@ -252,12 +252,32 @@ class TrajectoryExecutorNode(Node):
         self.trajectory_queue.append(('ATTACH', obj_name, 0.1))
         self.add_cartesian_segment(p_src_hover, gripper=0.015, duration=1.2)
 
-        # 2. Collision Avoidance Transit: Arc waypoints above laser barrier
+        # 2. Strict Collision Avoidance Transit: High Bridge Corridor
         if avoid_obs:
-            midpoint = (p_src_hover + p_dst_hover) / 2.0
-            midpoint[2] = obstacle_clearance_z
-            self.planned_path_points.append(list(midpoint))
-            self.add_cartesian_segment(midpoint, gripper=0.015, duration=2.2)
+            # Check if trajectory intersects the obstacle barrier corridor (Y in [-0.08, 0.18])
+            y_start, y_end = p_src[1], p_dst[1]
+            if (y_start < 0.05 < y_end) or (y_end < 0.05 < y_start):
+                # 3-point high clearance plateau bridge over the barrier
+                # 2.1 Climb up before reaching the obstacle zone
+                wp_climb = np.array([p_src[0], -0.12 if y_start < y_end else 0.22, high_corridor_z])
+                self.planned_path_points.append(list(wp_climb))
+                self.add_cartesian_segment(wp_climb, gripper=0.015, duration=1.8)
+
+                # 2.2 Cruise horizontally directly over the obstacle with generous vertical clearance (>22cm)
+                wp_cross = np.array([0.40, 0.05, high_corridor_z])
+                self.planned_path_points.append(list(wp_cross))
+                self.add_cartesian_segment(wp_cross, gripper=0.015, duration=1.5)
+
+                # 2.3 Maintain altitude until completely past the obstacle boundary
+                wp_clear = np.array([p_dst[0], 0.22 if y_start < y_end else -0.12, high_corridor_z])
+                self.planned_path_points.append(list(wp_clear))
+                self.add_cartesian_segment(wp_clear, gripper=0.015, duration=1.8)
+            else:
+                # Midpoint clearance arc for non-crossing movements
+                midpoint = (p_src_hover + p_dst_hover) / 2.0
+                midpoint[2] = high_corridor_z
+                self.planned_path_points.append(list(midpoint))
+                self.add_cartesian_segment(midpoint, gripper=0.015, duration=2.2)
 
         self.planned_path_points.append(list(p_dst_hover))
         self.planned_path_points.append(list(p_dst + np.array([0, 0, 0.05])))
