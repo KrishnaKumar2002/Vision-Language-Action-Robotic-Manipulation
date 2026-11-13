@@ -73,6 +73,15 @@ class CameraStreamNode(Node):
         self.pub_depth = self.create_publisher(Image, '/camera/depth/image_raw', 10)
         self.pub_info = self.create_publisher(CameraInfo, '/camera/camera_info', 10)
 
+        self.id_aliases = {
+            'red_box': 'red_can',
+            'red_can': 'red_can',
+            'blue_box': 'blue_mug',
+            'blue_mug': 'blue_mug',
+            'green_box': 'green_flask',
+            'green_flask': 'green_flask',
+        }
+
         # Subscribers for dynamic scene interaction
         self.sub_randomize = self.create_subscription(
             String, '/vla/randomize_scene', self.randomize_callback, 10
@@ -162,14 +171,15 @@ class CameraStreamNode(Node):
         )
 
     def carried_callback(self, msg):
-        """Update position of object currently grasped by the robot."""
+        """Update position of object currently grasped or placed by the robot."""
         import json
         try:
             data = json.loads(msg.data)
             obj_id = data.get('object_id')
             pos = data.get('pos')
-            if obj_id in self.scene_objects and pos:
-                self.scene_objects[obj_id]['pos'] = np.array(pos)
+            resolved_id = self.id_aliases.get(obj_id, obj_id)
+            if resolved_id in self.scene_objects and pos:
+                self.scene_objects[resolved_id]['pos'] = np.array(pos)
         except Exception as e:
             self.get_logger().error(f'Error updating carried object: {e}')
 

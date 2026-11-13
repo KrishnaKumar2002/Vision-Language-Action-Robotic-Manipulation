@@ -92,6 +92,8 @@ class TrajectoryExecutorNode(Node):
             String, '/vla/action_cmd', self.action_cmd_callback, 10)
         self.sub_detected = self.create_subscription(
             String, '/vla/detected_objects', self.detected_callback, 10)
+        self.sub_randomize = self.create_subscription(
+            String, '/vla/randomize_scene', self.randomize_callback, 10)
         self.pub_joints = self.create_publisher(JointState, '/joint_states', 10)
         self.pub_markers = self.create_publisher(MarkerArray, '/vla/markers', 10)
         self.pub_carried_pose = self.create_publisher(String, '/vla/carried_object_pose', 10)
@@ -136,6 +138,7 @@ class TrajectoryExecutorNode(Node):
         self.carried_object = None
         self.planned_path_points = []
         self.delivered_payload = None
+        self.delivered_objects = set()
 
         self.timer = self.create_timer(0.02, self.control_tick) # 50 Hz control loop
         self.get_logger().info('VLA Trajectory Executor & Dynamic Object Reparenting online.')
@@ -149,6 +152,11 @@ class TrajectoryExecutorNode(Node):
         t_plat.transform.rotation.w = 1.0
         self.static_broadcaster.sendTransform(t_plat)
 
+    def randomize_callback(self, msg):
+        """Reset delivered items tracking when scene is randomized."""
+        self.delivered_objects.clear()
+        self.delivered_payload = None
+
     def detected_callback(self, msg):
         """Update object coordinates dynamically from live perception stream (zero hardcoded coords)."""
         try:
@@ -157,7 +165,7 @@ class TrajectoryExecutorNode(Node):
                 oid = obj.get('id')
                 pos = obj.get('position')
                 if oid in self.objects and pos:
-                    if self.carried_object != oid:
+                    if self.carried_object != oid and oid not in self.delivered_objects:
                         self.objects[oid]['pos'] = pos
         except Exception:
             pass
@@ -200,6 +208,9 @@ class TrajectoryExecutorNode(Node):
             target_frame = plan['target_frame']
             dest_frame = plan['destination_frame']
             avoid_obs = plan.get('avoid_obstacle', True)
+
+            if target_frame in self.delivered_objects:
+                self.delivered_objects.remove(target_frame)
 
             try:
                 t_obj = self.tf_buffer.lookup_transform('base_link', target_frame, rclpy.time.Time())
@@ -322,9 +333,20 @@ class TrajectoryExecutorNode(Node):
             elif action[0] == 'DETACH':
                 _, obj_name, _ = action
                 # Release onto delivery dock
-                self.objects[obj_name]['pos'] = [0.35, 0.30, 0.065]
+                dock_pos = [0.35, 0.30, 0.065]
+                self.objects[obj_name]['pos'] = dock_pos
+                self.delivered_objects.add(obj_name)
                 self.delivered_payload = obj_name
                 self.carried_object = None
+
+                # Notify camera simulator of permanent placement on dock
+                carried_msg = String()
+                carried_msg.data = json.dumps({
+                    'object_id': obj_name,
+                    'pos': dock_pos
+                })
+                self.pub_carried_pose.publish(carried_msg)
+
                 self.get_logger().info(f'>>> RELEASE: {self.objects[obj_name]["label"]} delivered safely onto Docking Bay 01.')
                 self.trajectory_queue.pop(0)
 
